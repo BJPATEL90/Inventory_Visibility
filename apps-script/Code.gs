@@ -1297,6 +1297,12 @@ function buildEmailReport_(config, period, periods) {
         value: formatEmailPercent_(
           summaryPeriod.kpis.inventoryAccuracy
         ),
+        quantity: formatEmailNumber_(
+          summaryPeriod.kpis.systemQuantity
+        ),
+        inventoryValue: formatEmailCurrency_(
+          summaryPeriod.kpis.systemValue
+        ),
         dateRange:
           formatEmailDate_(summaryPeriod.startDate) +
           ' - ' +
@@ -1403,6 +1409,8 @@ function buildPlainTextEmail_(report) {
   lines.push('Inventory Accuracy Summary');
   report.periodSummary.forEach(function (period) {
     lines.push(period.label + ': ' + period.value);
+    lines.push('  Qty: ' + period.quantity);
+    lines.push('  Value: ' + period.inventoryValue);
   });
 
   if (!report.hasActivity && report.zeroActivity) {
@@ -1436,20 +1444,24 @@ function formatEmailDate_(dateText) {
  * Formats an email quantity with Indian digit grouping.
  */
 function formatEmailNumber_(value) {
-  return Number(round_(toNumber_(value), 2)).toLocaleString('en-IN', {
+  const number = Number(round_(toNumber_(value), 2));
+  const formatted = Math.abs(number).toLocaleString('en-IN', {
     maximumFractionDigits: 2
   });
+  return number < 0 ? '(' + formatted + ')' : formatted;
 }
 
 /**
  * Formats a COGS-based value in Indian rupees.
  */
 function formatEmailCurrency_(value) {
-  return Number(round_(toNumber_(value), 2)).toLocaleString('en-IN', {
+  const number = Number(round_(toNumber_(value), 2));
+  const formatted = Math.abs(number).toLocaleString('en-IN', {
     style: 'currency',
     currency: 'INR',
     maximumFractionDigits: 2
   });
+  return number < 0 ? '(' + formatted + ')' : formatted;
 }
 
 /**

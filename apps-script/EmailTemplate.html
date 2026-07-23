@@ -49,7 +49,8 @@
                   Inventory Accuracy
                 </div>
                 <div style="margin-top:4px; margin-bottom:16px; color:#64748b; font-size:13px; line-height:20px;">
-                  Last Quarter, Last Month, Month to Date, and Yesterday.
+                  Last Quarter, Last Month, Month to Date, and Yesterday.<br>
+                  Qty is System Quantity; Value uses COGS excluding GST.
                 </div>
 
                 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%; margin-bottom:18px;">
@@ -67,7 +68,13 @@
                               <div style="margin-top:5px; color:<?= summary.textColor ?>; font-size:20px; line-height:27px; font-weight:bold;">
                                 <?= summary.value ?>
                               </div>
-                              <div style="margin-top:4px; color:#64748b; font-size:9px; line-height:13px;">
+                              <div style="margin-top:8px; padding-top:7px; border-top:1px solid #cbd5e1; color:#475569; font-size:10px; line-height:15px;">
+                                <strong>Qty:</strong> <?= summary.quantity ?>
+                              </div>
+                              <div style="color:#475569; font-size:10px; line-height:15px;">
+                                <strong>Value:</strong> <?= summary.inventoryValue ?>
+                              </div>
+                              <div style="margin-top:5px; color:#64748b; font-size:9px; line-height:13px;">
                                 <?= summary.dateRange ?>
                               </div>
                             </td>

@@ -959,7 +959,10 @@ function testEmailPreview() {
     hasActivity: report.hasActivity,
     zeroActivity: report.zeroActivity,
     periodSummaryCount: report.periodSummary.length,
+    periodSummary: report.periodSummary,
     metricCount: report.metrics.length,
+    negativeNumberExample: formatEmailNumber_(-6307),
+    negativeValueExample: formatEmailCurrency_(-225811.56),
     dashboardUrl: report.dashboardUrl,
     htmlLength: html.length
   };

@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  </head>
+  <body style="margin:0; padding:0; background-color:#f1f5f9; font-family:Arial,Helvetica,sans-serif; color:#0f172a;">
+    <div style="display:none; max-height:0; overflow:hidden; opacity:0;">
+      Inventory Health Report for <?= report.reportingDate ?>
+    </div>
+
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%; background-color:#f1f5f9; margin:0; padding:0;">
+      <tr>
+        <td align="center" style="padding:24px 12px;">
+          <table role="presentation" width="680" cellspacing="0" cellpadding="0" border="0" style="width:100%; max-width:680px; background-color:#ffffff; border-collapse:separate; border-spacing:0; border-radius:16px; overflow:hidden;">
+            <tr>
+              <td style="background-color:#172554; padding:28px 32px;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+                  <tr>
+                    <td width="96" valign="middle" style="width:96px;">
+                      <table role="presentation" width="82" cellspacing="0" cellpadding="0" border="0" style="width:82px; border:1px solid #93c5fd; border-radius:10px;">
+                        <tr>
+                          <td align="center" style="padding:15px 6px; color:#dbeafe; font-size:10px; line-height:14px; font-weight:bold; letter-spacing:1px;">
+                            COMPANY<br>LOGO
+                          </td>
+                        </tr>
+                      </table>
+                    </td>
+                    <td valign="middle" style="padding-left:16px;">
+                      <div style="color:#93c5fd; font-size:11px; line-height:16px; font-weight:bold; letter-spacing:1.5px; text-transform:uppercase;">
+                        Daily inventory report
+                      </div>
+                      <div style="margin-top:5px; color:#ffffff; font-size:25px; line-height:32px; font-weight:bold;">
+                        <?= report.dashboardName ?>
+                      </div>
+                      <div style="margin-top:8px; color:#bfdbfe; font-size:13px; line-height:20px;">
+                        Reporting date: <?= report.reportingDate ?>
+                      </div>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+            <tr>
+              <td style="padding:28px 32px 10px 32px;">
+                <? if (!report.hasActivity && report.zeroActivity) { ?>
+                  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%; background-color:#fffbeb; border:1px solid #fde68a; border-radius:12px;">
+                    <tr>
+                      <td style="padding:20px;">
+                        <div style="color:#92400e; font-size:17px; line-height:24px; font-weight:bold;">
+                          <?= report.zeroActivity.message ?>
+                        </div>
+                        <div style="margin-top:10px; color:#78350f; font-size:14px; line-height:22px;">
+                          <strong>Reason:</strong> <?= report.zeroActivity.reason ?>
+                        </div>
+                        <? if (report.zeroActivity.remark) { ?>
+                          <div style="margin-top:4px; color:#78350f; font-size:14px; line-height:22px;">
+                            <strong>Remark:</strong> <?= report.zeroActivity.remark ?>
+                          </div>
+                        <? } ?>
+                      </td>
+                    </tr>
+                  </table>
+                <? } else { ?>
+                  <div style="color:#0f172a; font-size:18px; line-height:25px; font-weight:bold;">
+                    Executive KPI
+                  </div>
+                  <div style="margin-top:4px; margin-bottom:16px; color:#64748b; font-size:13px; line-height:20px;">
+                    Summary of yesterday's physical inventory cycle count.
+                  </div>
+
+                  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;">
+                    <? for (var rowIndex = 0; rowIndex < report.metrics.length; rowIndex += 2) { ?>
+                      <tr>
+                        <? for (var metricIndex = rowIndex; metricIndex < Math.min(rowIndex + 2, report.metrics.length); metricIndex += 1) {
+                          var metric = report.metrics[metricIndex];
+                        ?>
+                          <td width="49%" valign="top" style="width:49%; padding:0 5px 10px 0;">
+                            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%; background-color:<?= metric.backgroundColor ?>; border-left:4px solid <?= metric.indicatorColor ?>; border-radius:9px;">
+                              <tr>
+                                <td style="padding:15px 16px;">
+                                  <div style="color:#64748b; font-size:11px; line-height:16px; font-weight:bold; letter-spacing:0.5px; text-transform:uppercase;">
+                                    <?= metric.label ?>
+                                  </div>
+                                  <div style="margin-top:5px; color:<?= metric.textColor ?>; font-size:21px; line-height:28px; font-weight:bold;">
+                                    <?= metric.value ?>
+                                  </div>
+                                </td>
+                              </tr>
+                            </table>
+                          </td>
+                        <? } ?>
+                        <? if (rowIndex + 1 >= report.metrics.length) { ?>
+                          <td width="49%" style="width:49%; padding:0 0 10px 5px;">&nbsp;</td>
+                        <? } ?>
+                      </tr>
+                    <? } ?>
+                  </table>
+                <? } ?>
+              </td>
+            </tr>
+
+            <tr>
+              <td align="center" style="padding:20px 32px 28px 32px;">
+                <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+                  <tr>
+                    <td align="center" bgcolor="#1d4ed8" style="background-color:#1d4ed8; border-radius:8px;">
+                      <a href="<?= report.dashboardUrl ?>" target="_blank" style="display:inline-block; padding:12px 22px; color:#ffffff; font-size:14px; line-height:20px; font-weight:bold; text-decoration:none;">
+                        Open Inventory Dashboard
+                      </a>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+            <tr>
+              <td style="border-top:1px solid #e2e8f0; padding:20px 32px; background-color:#f8fafc;">
+                <div style="color:#64748b; font-size:12px; line-height:19px; text-align:center;">
+                  Report generated <?= report.generatedAt ?><br>
+                  Data source: Inventory_Dashboard Google Sheet
+                </div>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

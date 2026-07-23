@@ -45,7 +45,6 @@ import {
 import type {
   BinMasterRow,
   DashboardFilters,
-  InventoryTransaction,
   Kpis,
   PeriodData,
   PeriodKey,
@@ -101,15 +100,6 @@ function formatCurrency(value: number) {
 function formatPercent(value: number) {
   const formatted = `${numberFormatter.format(Math.abs(value))}%`;
   return value < 0 ? `(${formatted})` : formatted;
-}
-
-interface YesterdayFacilitySummary {
-  facility: string;
-  actualBinCount: number;
-  systemQuantity: number;
-  physicalQuantity: number;
-  netDifference: number;
-  netDifferenceValue: number;
 }
 
 function formatRefreshTime(value?: string) {
@@ -423,99 +413,6 @@ function YesterdayActivityNotice({
   );
 }
 
-function YesterdayFacilityTable({
-  rows,
-  period
-}: {
-  rows: YesterdayFacilitySummary[];
-  period: PeriodData;
-}) {
-  return (
-    <section className="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-      <div className="border-b border-slate-200 px-5 py-4 dark:border-slate-800">
-        <p className="text-xs font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-300">
-          Yesterday facility summary
-        </p>
-        <h3 className="mt-1 text-lg font-bold text-slate-950 dark:text-white">
-          Where Cycle Count Was Performed
-        </h3>
-        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-          {period.startDate} · System and physical quantity with net
-          difference value.
-        </p>
-      </div>
-
-      {rows.length === 0 ? (
-        <div className="px-5 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
-          No facility recorded cycle-count activity yesterday.
-        </div>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[820px] border-collapse text-sm">
-            <thead className="bg-slate-50 text-left dark:bg-slate-950/70">
-              <tr>
-                {[
-                  'Facility',
-                  'Counted Bins',
-                  'System Qty',
-                  'Physical Qty',
-                  'Net Diff Qty',
-                  'Net Diff Value'
-                ].map((label, index) => (
-                  <th
-                    key={label}
-                    className={`border-b border-slate-200 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:border-slate-800 dark:text-slate-400 ${
-                      index > 0 ? 'text-right' : ''
-                    }`}
-                  >
-                    {label}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {rows.map((row) => (
-                <tr key={row.facility}>
-                  <td className="px-4 py-3 font-semibold text-slate-900 dark:text-white">
-                    {row.facility}
-                  </td>
-                  <td className="px-4 py-3 text-right tabular-nums">
-                    {formatNumber(row.actualBinCount)}
-                  </td>
-                  <td className="px-4 py-3 text-right tabular-nums">
-                    {formatNumber(row.systemQuantity)}
-                  </td>
-                  <td className="px-4 py-3 text-right tabular-nums">
-                    {formatNumber(row.physicalQuantity)}
-                  </td>
-                  <td
-                    className={`px-4 py-3 text-right font-semibold tabular-nums ${
-                      row.netDifference < 0
-                        ? 'text-red-700 dark:text-red-300'
-                        : 'text-slate-700 dark:text-slate-300'
-                    }`}
-                  >
-                    {formatNumber(row.netDifference)}
-                  </td>
-                  <td
-                    className={`px-4 py-3 text-right font-semibold tabular-nums ${
-                      row.netDifferenceValue < 0
-                        ? 'text-red-700 dark:text-red-300'
-                        : 'text-slate-700 dark:text-slate-300'
-                    }`}
-                  >
-                    {formatCurrency(row.netDifferenceValue)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </section>
-  );
-}
-
 function KpiGrid({ kpis }: { kpis: Kpis }) {
   const completionStyle = getAccuracyStyle(
     kpis.cycleCountCompletion
@@ -731,52 +628,6 @@ export default function App() {
     transactions
   ]);
 
-  const yesterdayFacilityRows = useMemo(() => {
-    if (!dashboard) {
-      return [];
-    }
-
-    const yesterday = dashboard.periods.yesterday;
-    const yesterdayRows = filterTransactions(
-      transactions,
-      { ...EMPTY_FILTERS },
-      yesterday.startDate,
-      yesterday.endDate
-    );
-    const rowsByFacility = new Map<
-      string,
-      InventoryTransaction[]
-    >();
-
-    yesterdayRows.forEach((row) => {
-      if (!row.facility) {
-        return;
-      }
-      const facilityRows = rowsByFacility.get(row.facility) || [];
-      facilityRows.push(row);
-      rowsByFacility.set(row.facility, facilityRows);
-    });
-
-    return Array.from(rowsByFacility.entries())
-      .map(([facility, rows]) => {
-        const kpis = calculateFilteredKpis(rows, 0);
-        return {
-          facility,
-          actualBinCount: kpis.actualBinCount,
-          systemQuantity: kpis.systemQuantity,
-          physicalQuantity: kpis.physicalQuantity,
-          netDifference: kpis.netDifference,
-          netDifferenceValue: kpis.netDifferenceValue
-        };
-      })
-      .sort((first, second) =>
-        first.facility.localeCompare(second.facility, undefined, {
-          numeric: true,
-          sensitivity: 'base'
-        })
-      );
-  }, [dashboard, transactions]);
-
   const chartData = useMemo(
     () => calculateCharts(filteredRows),
     [filteredRows]
@@ -938,11 +789,6 @@ export default function App() {
             <YesterdayActivityNotice
               period={dashboard.periods.yesterday}
             />
-            <YesterdayFacilityTable
-              rows={yesterdayFacilityRows}
-              period={dashboard.periods.yesterday}
-            />
-
             <div className="mb-6 mt-8 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
               <div>
                 <p className="text-sm font-semibold text-blue-700 dark:text-blue-300">

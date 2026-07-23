@@ -5,19 +5,22 @@ import {
   AlertCircle,
   ArrowDownToLine,
   ArrowUpFromLine,
+  BadgePercent,
   Boxes,
   CalendarDays,
   CheckCircle2,
   ClipboardCheck,
   Database,
   Gauge,
+  IndianRupee,
   Moon,
   PackageCheck,
   RefreshCw,
   Scale,
   Sun,
   Target,
-  Warehouse
+  Warehouse,
+  WalletCards
 } from 'lucide-react';
 import {
   getActivityStatus,
@@ -81,8 +84,18 @@ const numberFormatter = new Intl.NumberFormat('en-IN', {
   maximumFractionDigits: 2
 });
 
+const currencyFormatter = new Intl.NumberFormat('en-IN', {
+  style: 'currency',
+  currency: 'INR',
+  maximumFractionDigits: 2
+});
+
 function formatNumber(value: number) {
   return numberFormatter.format(value);
+}
+
+function formatCurrency(value: number) {
+  return currencyFormatter.format(value);
 }
 
 function formatPercent(value: number) {
@@ -109,6 +122,12 @@ function formatRefreshTime(value?: string) {
 function accuracyTone(name: string) {
   if (name === 'Green') return 'green' as const;
   if (name === 'Yellow') return 'yellow' as const;
+  return 'red' as const;
+}
+
+function costCoverageTone(value: number) {
+  if (value >= 100) return 'green' as const;
+  if (value >= 95) return 'yellow' as const;
   return 'red' as const;
 }
 
@@ -282,6 +301,52 @@ function KpiGrid({ kpis }: { kpis: Kpis }) {
         description="Quantity from positive differences."
         icon={ArrowUpFromLine}
         tone="yellow"
+      />
+      <KpiCard
+        label="Total Inventory Value"
+        value={formatCurrency(kpis.totalInventoryValue)}
+        description="System quantity multiplied by COGS unit rate, excluding GST."
+        icon={IndianRupee}
+        tone="green"
+      />
+      <KpiCard
+        label="Physical Inventory Value"
+        value={formatCurrency(kpis.physicalValue)}
+        description="Physical quantity multiplied by COGS unit rate, excluding GST."
+        icon={WalletCards}
+        tone="purple"
+      />
+      <KpiCard
+        label="Net Difference Value"
+        value={formatCurrency(kpis.netDifferenceValue)}
+        description="Physical inventory value minus total system inventory value."
+        icon={Scale}
+        tone={kpis.netDifferenceValue < 0 ? 'red' : 'blue'}
+      />
+      <KpiCard
+        label="Short Value"
+        value={formatCurrency(kpis.shortValue)}
+        description="Absolute negative differences multiplied by COGS unit rate."
+        icon={ArrowDownToLine}
+        tone="red"
+      />
+      <KpiCard
+        label="Excess Value"
+        value={formatCurrency(kpis.excessValue)}
+        description="Positive differences multiplied by COGS unit rate."
+        icon={ArrowUpFromLine}
+        tone="yellow"
+      />
+      <KpiCard
+        label="Cost Coverage"
+        value={formatPercent(kpis.costCoverage)}
+        description={`${formatNumber(kpis.costedRowCount)} of ${formatNumber(
+          kpis.costedRowCount + kpis.missingCostRowCount
+        )} rows matched; ${formatNumber(
+          kpis.missingCostSkuCount
+        )} SKU(s) need a COGS rate.`}
+        icon={BadgePercent}
+        tone={costCoverageTone(kpis.costCoverage)}
       />
       <KpiCard
         label="Planned Bin Count"

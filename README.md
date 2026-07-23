@@ -13,6 +13,24 @@ Google Sheets, Google Apps Script, React, and GitHub Pages.
 The refresh and email jobs run in Google's cloud. After the Apps Script triggers
 are installed, they continue to run when your laptop is switched off.
 
+## Version 2 Phase 1
+
+Version 2 Phase 1 adds read-only cost integration and value-based KPIs. Inventory
+rows are matched to the `COGS` sheet by SKU. All values use Indian rupees and
+`Unit Rate (Excluding Gst)`.
+
+Added KPIs:
+
+- Total Inventory Value
+- Physical Inventory Value
+- Net Difference Value
+- Short Value
+- Excess Value
+- Cost Coverage
+
+Rows without a valid matching COGS rate are excluded from value totals and
+reported through Cost Coverage. Version 1 quantity calculations are unchanged.
+
 ## Project folders
 
 ```text
@@ -73,7 +91,23 @@ The application does not change these source sheets. A missing or empty source
 sheet is skipped safely. Do not create a `Combine` sheet; the combined data is
 created only in Apps Script memory.
 
-## 3. Create or check the Config sheet
+## 3. Check the COGS sheet
+
+The sheet must be named `COGS` and use:
+
+```text
+SKU | Product Name | Unit Rate (Excluding Gst) | GST Rate
+```
+
+Important:
+
+- `SKU` is matched case-insensitively to `Sku Code` in the inventory sheets.
+- `Unit Rate (Excluding Gst)` must contain a valid zero or positive number.
+- GST is not included in Version 2 value KPIs.
+- Duplicate SKUs should be removed. The first valid cost row is used.
+- Maintain costs directly in Google Sheets; the dashboard never changes COGS.
+
+## 4. Create or check the Config sheet
 
 The easiest method is to run `setupApplication()` in Part 2. It creates the
 `Config` sheet when it is missing and adds any missing settings without
@@ -106,7 +140,7 @@ Important:
 - Run `createRefreshTrigger()` after changing the refresh minutes.
 - Run `createDailyEmailTrigger()` after changing the email hour.
 
-## 4. Create or check Activity_Status
+## 5. Create or check Activity_Status
 
 The sheet must be named `Activity_Status` and use:
 
@@ -131,7 +165,7 @@ Example:
 Enter a row only when no cycle count was performed for that date. Keep the Date
 cell as a real Google Sheets date.
 
-## 5. Create or check Bin_Master
+## 6. Create or check Bin_Master
 
 The sheet must be named `Bin_Master` and use:
 
@@ -142,7 +176,7 @@ Facility | Rack | Bin | Status
 This table is read-only in the dashboard. Maintain its rows directly in Google
 Sheets.
 
-## 6. Create or check SKU_MASTER
+## 7. Create or check SKU_MASTER
 
 The recommended sheet name is `SKU_Master`, using:
 
@@ -430,6 +464,7 @@ Apps Script is still deployed separately through the Apps Script editor.
 ## A. KPI calculations
 
 - [ ] Run `testKpiCalculations()` and confirm it completes without errors.
+- [ ] Run `testValueKpis()` and review Cost Coverage and missing-cost SKUs.
 - [ ] Run `testPhase1()` and compare the combined row count with the source
   sheets.
 - [ ] Confirm System Quantity is the sum of `Sys`.
@@ -437,6 +472,15 @@ Apps Script is still deployed separately through the Apps Script editor.
 - [ ] Confirm Net Difference equals Physical Quantity minus System Quantity.
 - [ ] Confirm Short Quantity uses the absolute total of negative differences.
 - [ ] Confirm Excess Quantity totals positive differences.
+- [ ] Confirm Total Inventory Value equals `Sys × Unit Rate` for matched rows.
+- [ ] Confirm Physical Inventory Value equals `Phy × Unit Rate` for matched
+  rows.
+- [ ] Confirm Net Difference Value equals Physical Value minus System Value.
+- [ ] Confirm Short Value uses negative `Diff × Unit Rate`.
+- [ ] Confirm Excess Value uses positive `Diff × Unit Rate`.
+- [ ] Confirm Cost Coverage equals matched rows divided by selected rows.
+- [ ] Confirm missing-cost rows show `Missing cost` in the transaction table.
+- [ ] Confirm changing filters updates all quantity and value KPIs together.
 - [ ] Confirm Actual Bin Count counts unique Facility + Rack + Shelf values.
 - [ ] Confirm Yesterday planned bins equals Daily Planned Bin Count.
 - [ ] Confirm Month to Date planned bins equals Daily Planned Bin Count
@@ -583,9 +627,9 @@ Confirm:
 - The daily trigger exists.
 - The Apps Script account has not exceeded its email quota.
 
-# First-version scope
+# Current scope
 
 This release intentionally does not include a Node/Express backend, Docker,
-editable master forms, role-management screens, Excel/PDF export, value-based
-KPIs, or a materialized Combine sheet. Those features can be considered after
-the first version is stable.
+editable master forms, role-management screens, Excel/PDF export, GST-inclusive
+value KPIs, or a materialized Combine sheet. Version 2 Phase 1 adds only the
+approved COGS-based value KPIs while keeping the original small architecture.

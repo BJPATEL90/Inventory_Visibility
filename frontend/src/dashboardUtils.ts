@@ -73,8 +73,15 @@ export function calculateFilteredKpis(
   let absoluteDifference = 0;
   let shortQuantity = 0;
   let excessQuantity = 0;
+  let systemValue = 0;
+  let physicalValue = 0;
+  let shortValue = 0;
+  let excessValue = 0;
+  let costedRowCount = 0;
+  let missingCostRowCount = 0;
   let ntfCount = 0;
   const binDifferences = new Map<string, number>();
+  const missingCostSkus = new Set<string>();
 
   rows.forEach((row) => {
     systemQuantity += row.systemQuantity;
@@ -85,6 +92,29 @@ export function calculateFilteredKpis(
       shortQuantity += Math.abs(row.difference);
     } else if (row.difference > 0) {
       excessQuantity += row.difference;
+    }
+
+    const hasCost =
+      typeof row.unitCost === 'number' &&
+      Number.isFinite(row.unitCost) &&
+      row.unitCost >= 0;
+
+    if (hasCost) {
+      const unitCost = row.unitCost as number;
+      costedRowCount += 1;
+      systemValue += row.systemQuantity * unitCost;
+      physicalValue += row.physicalQuantity * unitCost;
+
+      if (row.difference < 0) {
+        shortValue += Math.abs(row.difference) * unitCost;
+      } else if (row.difference > 0) {
+        excessValue += row.difference * unitCost;
+      }
+    } else {
+      missingCostRowCount += 1;
+      if (row.skuCode.trim()) {
+        missingCostSkus.add(row.skuCode.trim().toUpperCase());
+      }
     }
 
     if (/NTF/i.test(row.remark)) {
@@ -116,6 +146,8 @@ export function calculateFilteredKpis(
     plannedBinCount === 0
       ? 0
       : (actualBinCount / plannedBinCount) * 100;
+  const costCoverage =
+    rows.length === 0 ? 0 : (costedRowCount / rows.length) * 100;
 
   return {
     inventoryAccuracy: round(inventoryAccuracy),
@@ -127,6 +159,16 @@ export function calculateFilteredKpis(
     netDifference: round(physicalQuantity - systemQuantity),
     shortQuantity: round(shortQuantity),
     excessQuantity: round(excessQuantity),
+    systemValue: round(systemValue),
+    physicalValue: round(physicalValue),
+    totalInventoryValue: round(systemValue),
+    netDifferenceValue: round(physicalValue - systemValue),
+    shortValue: round(shortValue),
+    excessValue: round(excessValue),
+    costCoverage: round(costCoverage),
+    costedRowCount,
+    missingCostRowCount,
+    missingCostSkuCount: missingCostSkus.size,
     plannedBinCount: round(plannedBinCount),
     actualBinCount,
     cycleCountCompletion: round(completion),

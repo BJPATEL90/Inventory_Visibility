@@ -14,6 +14,7 @@
  * 6. Creates a cloud refresh trigger.
  * 7. Provides test functions that print results in Apps Script logs.
  * 8. Sends the daily HTML email report from Google's cloud.
+ * 9. Joins the read-only COGS sheet and calculates Version 2 value KPIs.
  */
 
 const SPREADSHEET_ID = '1uB9hiqI8z46_fYxiB1syRwNNw0TM_ZV2NCYZcAVmWIk';
@@ -43,6 +44,14 @@ const INVENTORY_HEADERS = [
   'Remark'
 ];
 
+const COST_SHEET_NAME = 'COGS';
+const COST_HEADERS = [
+  'SKU',
+  'Product Name',
+  'Unit Rate (Excluding Gst)',
+  'GST Rate'
+];
+
 // These values are written only when Config is first prepared.
 // After setup, the application reads every setting from the Config sheet.
 const CONFIG_DEFAULTS = [
@@ -68,7 +77,7 @@ const ACTIVITY_REASONS = [
   'Other'
 ];
 
-const DASHBOARD_CACHE_KEY = 'inventory_dashboard_phase_1_v2';
+const DASHBOARD_CACHE_KEY = 'inventory_dashboard_v2_value_kpis_v1';
 const LAST_REFRESH_PROPERTY = 'INVENTORY_LAST_REFRESH_TIME';
 const LAST_EMAIL_SENT_PROPERTY = 'INVENTORY_LAST_EMAIL_SENT_TIME';
 const REFRESH_HANDLER = 'refreshDashboardCache';
@@ -246,6 +255,7 @@ function getConfig() {
 function getCombinedData() {
   const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
   const combinedRows = [];
+  const costMap = readCostMap_(spreadsheet);
   const timeZone = getTimeZone_();
 
   SOURCE_SHEETS.forEach(function (sheetName) {
@@ -273,13 +283,21 @@ function getCombinedData() {
       const difference = isBlank_(rawDifference)
         ? physicalQuantity - systemQuantity
         : toNumber_(rawDifference);
+      const skuCode = cleanText_(row[indexes['Sku Code']]);
+      const normalizedSku = normalizeSku_(skuCode);
+      const costRecord =
+        normalizedSku &&
+        Object.prototype.hasOwnProperty.call(costMap, normalizedSku)
+          ? costMap[normalizedSku]
+          : null;
+      const unitCost = costRecord ? costRecord.unitCost : null;
 
       combinedRows.push({
         id: sheetName + '-' + String(rowIndex + 1),
         facility: sheetName,
         date: normalizeDate_(row[indexes['Date']], timeZone),
         rack: cleanText_(row[indexes['Rack']]),
-        skuCode: cleanText_(row[indexes['Sku Code']]),
+        skuCode: skuCode,
         itemName: cleanText_(row[indexes['Item Name']]),
         shelf: cleanText_(row[indexes['Shelf']]),
         batch: cleanText_(row[indexes['Batch']]),
@@ -292,6 +310,18 @@ function getCombinedData() {
         physicalQuantity: physicalQuantity,
         systemQuantity: systemQuantity,
         difference: difference,
+        costAvailable: unitCost !== null,
+        unitCost: unitCost,
+        gstRate: costRecord ? costRecord.gstRate : null,
+        systemValue: unitCost === null
+          ? null
+          : round_(systemQuantity * unitCost, 2),
+        physicalValue: unitCost === null
+          ? null
+          : round_(physicalQuantity * unitCost, 2),
+        differenceValue: unitCost === null
+          ? null
+          : round_(difference * unitCost, 2),
         remark: cleanText_(row[indexes['Remark']])
       });
     }
@@ -349,10 +379,13 @@ function getSkuMaster() {
 }
 
 /**
- * Calculates the Phase 1 KPI values from combined inventory rows.
+ * Calculates quantity and Version 2 value KPIs from combined inventory rows.
  *
  * A bin is Facility + Rack + Shelf.
  * A bin is accurate when its total Difference is zero.
+ * Value KPIs use the COGS Unit Rate (Excluding Gst).
+ * Rows without a matching cost are excluded from value totals and counted in
+ * the cost-coverage diagnostics.
  */
 function calculateKpis(inventoryRows, options) {
   const rows = Array.isArray(inventoryRows) ? inventoryRows : [];
@@ -364,13 +397,21 @@ function calculateKpis(inventoryRows, options) {
   let absoluteDifference = 0;
   let shortQuantity = 0;
   let excessQuantity = 0;
+  let systemValue = 0;
+  let physicalValue = 0;
+  let shortValue = 0;
+  let excessValue = 0;
+  let costedRowCount = 0;
+  let missingCostRowCount = 0;
   let ntfCount = 0;
   const binDifferences = {};
+  const missingCostSkus = {};
 
   rows.forEach(function (row) {
     const system = toNumber_(row.systemQuantity);
     const physical = toNumber_(row.physicalQuantity);
     const difference = toNumber_(row.difference);
+    const unitCost = optionalNumber_(row.unitCost);
 
     systemQuantity += system;
     physicalQuantity += physical;
@@ -382,6 +423,26 @@ function calculateKpis(inventoryRows, options) {
 
     if (difference > 0) {
       excessQuantity += difference;
+    }
+
+    if (unitCost !== null && unitCost >= 0) {
+      costedRowCount += 1;
+      systemValue += system * unitCost;
+      physicalValue += physical * unitCost;
+
+      if (difference < 0) {
+        shortValue += Math.abs(difference) * unitCost;
+      }
+
+      if (difference > 0) {
+        excessValue += difference * unitCost;
+      }
+    } else {
+      missingCostRowCount += 1;
+      const missingSku = normalizeSku_(row.skuCode);
+      if (missingSku) {
+        missingCostSkus[missingSku] = true;
+      }
     }
 
     if (/NTF/i.test(cleanText_(row.remark))) {
@@ -411,6 +472,9 @@ function calculateKpis(inventoryRows, options) {
   const completion = plannedBinCount === 0
     ? 0
     : (actualBinCount / plannedBinCount) * 100;
+  const costCoverage = rows.length === 0
+    ? 0
+    : (costedRowCount / rows.length) * 100;
 
   return {
     inventoryAccuracy: round_(inventoryAccuracy, 2),
@@ -422,6 +486,16 @@ function calculateKpis(inventoryRows, options) {
     netDifference: round_(physicalQuantity - systemQuantity, 2),
     shortQuantity: round_(shortQuantity, 2),
     excessQuantity: round_(excessQuantity, 2),
+    systemValue: round_(systemValue, 2),
+    physicalValue: round_(physicalValue, 2),
+    totalInventoryValue: round_(systemValue, 2),
+    netDifferenceValue: round_(physicalValue - systemValue, 2),
+    shortValue: round_(shortValue, 2),
+    excessValue: round_(excessValue, 2),
+    costCoverage: round_(costCoverage, 2),
+    costedRowCount: costedRowCount,
+    missingCostRowCount: missingCostRowCount,
+    missingCostSkuCount: Object.keys(missingCostSkus).length,
     plannedBinCount: round_(plannedBinCount, 2),
     actualBinCount: actualBinCount,
     cycleCountCompletion: round_(completion, 2),
@@ -759,6 +833,12 @@ function testEmailPreview() {
  * Net Difference -5
  * Short 7
  * Excess 2
+ * Total Inventory Value 2,000
+ * Physical Value 2,020
+ * Net Difference Value 20
+ * Short Value 20
+ * Excess Value 40
+ * Cost Coverage 66.67
  * Actual Bins 2
  * NTF Count 1
  */
@@ -768,27 +848,33 @@ function testKpiCalculations() {
       facility: 'TEST',
       rack: 'R1',
       shelf: 'S1',
+      skuCode: 'SKU-1',
       systemQuantity: 100,
       physicalQuantity: 98,
       difference: -2,
+      unitCost: 10,
       remark: 'NTF found'
     },
     {
       facility: 'TEST',
       rack: 'R1',
       shelf: 'S1',
+      skuCode: 'SKU-2',
       systemQuantity: 50,
       physicalQuantity: 52,
       difference: 2,
+      unitCost: 20,
       remark: ''
     },
     {
       facility: 'TEST',
       rack: 'R2',
       shelf: 'S2',
+      skuCode: 'SKU-MISSING',
       systemQuantity: 100,
       physicalQuantity: 95,
       difference: -5,
+      unitCost: null,
       remark: ''
     }
   ];
@@ -808,6 +894,24 @@ function testKpiCalculations() {
   assertEqual_(result.netDifference, -5, 'Net Difference');
   assertEqual_(result.shortQuantity, 7, 'Short Quantity');
   assertEqual_(result.excessQuantity, 2, 'Excess Quantity');
+  assertEqual_(result.systemValue, 2000, 'System Value');
+  assertEqual_(result.physicalValue, 2020, 'Physical Value');
+  assertEqual_(
+    result.totalInventoryValue,
+    2000,
+    'Total Inventory Value'
+  );
+  assertEqual_(
+    result.netDifferenceValue,
+    20,
+    'Net Difference Value'
+  );
+  assertEqual_(result.shortValue, 20, 'Short Value');
+  assertEqual_(result.excessValue, 40, 'Excess Value');
+  assertEqual_(result.costCoverage, 66.67, 'Cost Coverage');
+  assertEqual_(result.costedRowCount, 2, 'Costed Row Count');
+  assertEqual_(result.missingCostRowCount, 1, 'Missing Cost Row Count');
+  assertEqual_(result.missingCostSkuCount, 1, 'Missing Cost SKU Count');
   assertEqual_(result.actualBinCount, 2, 'Actual Bin Count');
   assertEqual_(result.plannedBinCount, 100, 'Planned Bin Count');
   assertEqual_(result.cycleCountCompletion, 2, 'Completion');
@@ -839,6 +943,42 @@ function testPhase1() {
     combinedRowCount: rows.length,
     rowsByFacility: dashboard.sourceSummary.rowsByFacility,
     skippedSourceSheets: dashboard.sourceSummary.skippedSourceSheets,
+    periods: dashboard.periods,
+    lastRefreshTime: getLastRefreshTime_()
+  };
+
+  console.log(JSON.stringify(output, null, 2));
+  return output;
+}
+
+/**
+ * Tests the real COGS join and Version 2 value KPI coverage.
+ *
+ * This function is read-only. It prints missing SKUs so they can be corrected
+ * directly in COGS without hiding their value impact.
+ */
+function testValueKpis() {
+  const rows = getCombinedData();
+  const dashboard = refreshDashboardCache();
+  const missingCostSkus = {};
+
+  rows.forEach(function (row) {
+    if (optionalNumber_(row.unitCost) === null) {
+      const sku = normalizeSku_(row.skuCode);
+      if (sku) {
+        missingCostSkus[sku] = true;
+      }
+    }
+  });
+
+  const output = {
+    passed: true,
+    costSheetName: COST_SHEET_NAME,
+    currency: 'INR',
+    includesGst: false,
+    combinedRowCount: rows.length,
+    costSummary: dashboard.sourceSummary.costSummary,
+    missingCostSkus: Object.keys(missingCostSkus).sort(),
     periods: dashboard.periods,
     lastRefreshTime: getLastRefreshTime_()
   };
@@ -926,6 +1066,14 @@ function buildEmailReport_(config, period) {
     background: '#fff7ed',
     indicator: '#ea580c'
   };
+  const valueStyle = {
+    text: '#166534',
+    background: '#ecfdf5',
+    indicator: '#16a34a'
+  };
+  const coverageStyle = kpis.costCoverage >= 100
+    ? valueStyle
+    : warningStyle;
 
   return {
     dashboardName: config.dashboardName,
@@ -975,6 +1123,36 @@ function buildEmailReport_(config, period) {
         'Net Difference',
         formatEmailNumber_(kpis.netDifference),
         standardStyle
+      ),
+      emailMetric_(
+        'Total Inventory Value',
+        formatEmailCurrency_(kpis.totalInventoryValue),
+        valueStyle
+      ),
+      emailMetric_(
+        'Physical Inventory Value',
+        formatEmailCurrency_(kpis.physicalValue),
+        valueStyle
+      ),
+      emailMetric_(
+        'Net Difference Value',
+        formatEmailCurrency_(kpis.netDifferenceValue),
+        kpis.netDifferenceValue < 0 ? warningStyle : standardStyle
+      ),
+      emailMetric_(
+        'Short Value',
+        formatEmailCurrency_(kpis.shortValue),
+        warningStyle
+      ),
+      emailMetric_(
+        'Excess Value',
+        formatEmailCurrency_(kpis.excessValue),
+        warningStyle
+      ),
+      emailMetric_(
+        'Cost Coverage',
+        formatEmailPercent_(kpis.costCoverage),
+        coverageStyle
       ),
       emailMetric_(
         'Planned Bin Count',
@@ -1073,6 +1251,17 @@ function formatEmailDate_(dateText) {
  */
 function formatEmailNumber_(value) {
   return Number(round_(toNumber_(value), 2)).toLocaleString('en-IN', {
+    maximumFractionDigits: 2
+  });
+}
+
+/**
+ * Formats a COGS-based value in Indian rupees.
+ */
+function formatEmailCurrency_(value) {
+  return Number(round_(toNumber_(value), 2)).toLocaleString('en-IN', {
+    style: 'currency',
+    currency: 'INR',
     maximumFractionDigits: 2
   });
 }
@@ -1210,15 +1399,39 @@ function zeroActivityMessage_(range) {
  */
 function sourceSummary_(rows) {
   const rowsByFacility = {};
+  const missingCostSkus = {};
+  let costedRowCount = 0;
+  let missingCostRowCount = 0;
 
   rows.forEach(function (row) {
     rowsByFacility[row.facility] =
       (rowsByFacility[row.facility] || 0) + 1;
+
+    if (optionalNumber_(row.unitCost) !== null) {
+      costedRowCount += 1;
+    } else {
+      missingCostRowCount += 1;
+      const missingSku = normalizeSku_(row.skuCode);
+      if (missingSku) {
+        missingCostSkus[missingSku] = true;
+      }
+    }
   });
 
   return {
     combinedRowCount: rows.length,
     rowsByFacility: rowsByFacility,
+    costSummary: {
+      costSheetName: COST_SHEET_NAME,
+      currency: 'INR',
+      includesGst: false,
+      costedRowCount: costedRowCount,
+      missingCostRowCount: missingCostRowCount,
+      missingCostSkuCount: Object.keys(missingCostSkus).length,
+      costCoverage: rows.length === 0
+        ? 0
+        : round_((costedRowCount / rows.length) * 100, 2)
+    },
     skippedSourceSheets: SOURCE_SHEETS.filter(function (sheetName) {
       return !Object.prototype.hasOwnProperty.call(
         rowsByFacility,
@@ -1379,6 +1592,71 @@ function inventoryHeaderIndexes_(headerRow, sheetName) {
 }
 
 /**
+ * Reads the COGS sheet into a SKU-keyed cost map without changing the sheet.
+ *
+ * The first valid row for a SKU is used. Blank, invalid, or negative unit
+ * rates are treated as missing costs so they are visible in Cost Coverage.
+ */
+function readCostMap_(spreadsheet) {
+  const sheet = findSheetIgnoreCase_(spreadsheet, COST_SHEET_NAME);
+  const costMap = {};
+
+  if (!sheet || sheet.getLastRow() <= 1 || sheet.getLastColumn() === 0) {
+    return costMap;
+  }
+
+  const values = sheet
+    .getRange(1, 1, sheet.getLastRow(), sheet.getLastColumn())
+    .getValues();
+  const normalizedHeaders = values[0].map(normalizeHeader_);
+  const indexes = {};
+
+  COST_HEADERS.forEach(function (requiredHeader) {
+    const index = normalizedHeaders.indexOf(
+      normalizeHeader_(requiredHeader)
+    );
+
+    if (index < 0) {
+      throw new Error(
+        'Sheet "' +
+          sheet.getName() +
+          '" is missing the required column "' +
+          requiredHeader +
+          '".'
+      );
+    }
+
+    indexes[requiredHeader] = index;
+  });
+
+  for (let rowIndex = 1; rowIndex < values.length; rowIndex += 1) {
+    const row = values[rowIndex];
+    const sku = normalizeSku_(row[indexes['SKU']]);
+    const unitCost = optionalNumber_(
+      row[indexes['Unit Rate (Excluding Gst)']]
+    );
+
+    if (
+      !sku ||
+      unitCost === null ||
+      unitCost < 0 ||
+      Object.prototype.hasOwnProperty.call(costMap, sku)
+    ) {
+      continue;
+    }
+
+    costMap[sku] = {
+      sku: sku,
+      productName: cleanText_(row[indexes['Product Name']]),
+      unitCost: unitCost,
+      gstRate: optionalNumber_(row[indexes['GST Rate']])
+    };
+  }
+
+  return costMap;
+}
+
+/**
  * Reads a master sheet into simple named objects without changing the sheet.
  */
 function readMasterSheet_(sheetName, expectedHeaders, outputKeys) {
@@ -1461,6 +1739,13 @@ function normalizeHeader_(value) {
 }
 
 /**
+ * Creates a stable, case-insensitive key for joining inventory and COGS SKUs.
+ */
+function normalizeSku_(value) {
+  return cleanText_(value).toUpperCase();
+}
+
+/**
  * Checks only the required inventory cells when deciding if a row is blank.
  */
 function inventoryRowIsBlank_(row, indexes) {
@@ -1522,6 +1807,32 @@ function requiredNumberSetting_(settings, name, minimum, maximum) {
   }
 
   return value;
+}
+
+/**
+ * Converts an optional sheet value to a number.
+ *
+ * Unlike toNumber_(), this returns null for blank or invalid values so a
+ * missing cost is never silently treated as a valid zero cost.
+ */
+function optionalNumber_(value) {
+  if (isBlank_(value)) {
+    return null;
+  }
+
+  if (typeof value === 'number') {
+    return isFinite(value) ? value : null;
+  }
+
+  const text = String(value).trim().replace(/,/g, '');
+  const isAccountingNegative = /^\(.*\)$/.test(text);
+  const number = Number(text.replace(/[()]/g, ''));
+
+  if (!isFinite(number)) {
+    return null;
+  }
+
+  return isAccountingNegative ? -number : number;
 }
 
 /**

@@ -24,6 +24,16 @@ export interface Kpis {
   netDifference: number;
   shortQuantity: number;
   excessQuantity: number;
+  systemValue: number;
+  physicalValue: number;
+  totalInventoryValue: number;
+  netDifferenceValue: number;
+  shortValue: number;
+  excessValue: number;
+  costCoverage: number;
+  costedRowCount: number;
+  missingCostRowCount: number;
+  missingCostSkuCount: number;
   plannedBinCount: number;
   actualBinCount: number;
   cycleCountCompletion: number;
@@ -53,6 +63,15 @@ export interface DashboardData {
     combinedRowCount: number;
     rowsByFacility: Record<string, number>;
     skippedSourceSheets: string[];
+    costSummary: {
+      costSheetName: string;
+      currency: 'INR';
+      includesGst: boolean;
+      costedRowCount: number;
+      missingCostRowCount: number;
+      missingCostSkuCount: number;
+      costCoverage: number;
+    };
   };
 }
 
@@ -87,6 +106,12 @@ export interface InventoryTransaction {
   physicalQuantity: number;
   systemQuantity: number;
   difference: number;
+  costAvailable: boolean;
+  unitCost: number | null;
+  gstRate: number | null;
+  systemValue: number | null;
+  physicalValue: number | null;
+  differenceValue: number | null;
   remark: string;
 }
 

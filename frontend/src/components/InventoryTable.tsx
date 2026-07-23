@@ -21,9 +21,13 @@ type SortKey =
   | 'shelf'
   | 'batch'
   | 'vendorBatchNumber'
+  | 'unitCost'
   | 'systemQuantity'
   | 'physicalQuantity'
   | 'difference'
+  | 'systemValue'
+  | 'physicalValue'
+  | 'differenceValue'
   | 'remark';
 
 interface InventoryTableProps {
@@ -54,9 +58,13 @@ const columns: ColumnDefinition[] = [
     label: 'Vendor Batch',
     className: 'min-w-36'
   },
+  { key: 'unitCost', label: 'Unit Cost', numeric: true },
   { key: 'systemQuantity', label: 'System Qty', numeric: true },
   { key: 'physicalQuantity', label: 'Physical Qty', numeric: true },
   { key: 'difference', label: 'Difference', numeric: true },
+  { key: 'systemValue', label: 'System Value', numeric: true },
+  { key: 'physicalValue', label: 'Physical Value', numeric: true },
+  { key: 'differenceValue', label: 'Difference Value', numeric: true },
   {
     key: 'remark',
     label: 'Remark',
@@ -65,6 +73,12 @@ const columns: ColumnDefinition[] = [
 ];
 
 const numberFormatter = new Intl.NumberFormat('en-IN', {
+  maximumFractionDigits: 2
+});
+
+const currencyFormatter = new Intl.NumberFormat('en-IN', {
+  style: 'currency',
+  currency: 'INR',
   maximumFractionDigits: 2
 });
 
@@ -84,11 +98,23 @@ function formatDate(value: string) {
 }
 
 function compareValues(
-  first: string | number,
-  second: string | number,
+  first: string | number | null,
+  second: string | number | null,
   direction: SortDirection
 ) {
   const multiplier = direction === 'asc' ? 1 : -1;
+
+  if (first === null && second === null) {
+    return 0;
+  }
+
+  if (first === null) {
+    return 1;
+  }
+
+  if (second === null) {
+    return -1;
+  }
 
   if (typeof first === 'number' && typeof second === 'number') {
     return (first - second) * multiplier;
@@ -102,7 +128,7 @@ function compareValues(
   );
 }
 
-function csvCell(value: string | number) {
+function csvCell(value: string | number | null) {
   return `"${String(value ?? '').replace(/"/g, '""')}"`;
 }
 
@@ -127,9 +153,13 @@ export function InventoryTable({ rows }: InventoryTableProps) {
             row.shelf,
             row.batch,
             row.vendorBatchNumber,
+            row.unitCost,
             row.systemQuantity,
             row.physicalQuantity,
             row.difference,
+            row.systemValue,
+            row.physicalValue,
+            row.differenceValue,
             row.remark
           ]
             .join(' ')
@@ -192,9 +222,13 @@ export function InventoryTable({ rows }: InventoryTableProps) {
         row.shelf,
         row.batch,
         row.vendorBatchNumber,
+        row.unitCost,
         row.systemQuantity,
         row.physicalQuantity,
         row.difference,
+        row.systemValue,
+        row.physicalValue,
+        row.differenceValue,
         row.remark
       ]
         .map(csvCell)
@@ -250,6 +284,48 @@ export function InventoryTable({ rows }: InventoryTableProps) {
       );
     }
 
+    if (
+      column.key === 'unitCost' ||
+      column.key === 'systemValue' ||
+      column.key === 'physicalValue'
+    ) {
+      const value = row[column.key];
+      return value === null ? (
+        <span className="text-xs font-semibold text-red-600 dark:text-red-400">
+          Missing cost
+        </span>
+      ) : (
+        currencyFormatter.format(value)
+      );
+    }
+
+    if (column.key === 'differenceValue') {
+      const value = row.differenceValue;
+
+      if (value === null) {
+        return (
+          <span className="text-xs font-semibold text-red-600 dark:text-red-400">
+            Missing cost
+          </span>
+        );
+      }
+
+      const valueClass =
+        value < 0
+          ? 'bg-red-50 text-red-700 dark:bg-red-950/50 dark:text-red-300'
+          : value > 0
+            ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300'
+            : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300';
+
+      return (
+        <span
+          className={`inline-flex rounded-md px-2 py-1 text-xs font-semibold ${valueClass}`}
+        >
+          {currencyFormatter.format(value)}
+        </span>
+      );
+    }
+
     const value = row[column.key];
     return value === '' ? '—' : String(value);
   }
@@ -299,7 +375,7 @@ export function InventoryTable({ rows }: InventoryTableProps) {
       </div>
 
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[1500px] border-collapse text-left text-sm">
+        <table className="w-full min-w-[2050px] border-collapse text-left text-sm">
           <thead className="bg-slate-50 dark:bg-slate-950/70">
             <tr>
               {columns.map((column) => (

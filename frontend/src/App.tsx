@@ -58,6 +58,9 @@ const PERIOD_KEYS: PeriodKey[] = [
   'yesterday'
 ];
 
+// Change this to true when the read-only Masters section is needed again.
+const SHOW_MASTERS = false;
+
 const BIN_MASTER_COLUMNS: MasterColumn<BinMasterRow>[] = [
   { key: 'facility', label: 'Facility' },
   { key: 'rack', label: 'Rack' },
@@ -258,12 +261,16 @@ function SectionNavigation() {
       description: 'Search and CSV download',
       icon: Database
     },
-    {
-      href: '#masters-section',
-      label: '3. Bin & SKU Masters',
-      description: 'Read-only master data',
-      icon: Warehouse
-    }
+    ...(SHOW_MASTERS
+      ? [
+          {
+            href: '#masters-section',
+            label: '3. Bin & SKU Masters',
+            description: 'Read-only master data',
+            icon: Warehouse
+          }
+        ]
+      : [])
   ];
 
   return (
@@ -271,7 +278,11 @@ function SectionNavigation() {
       aria-label="Dashboard sections"
       className="border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900"
     >
-      <div className="mx-auto grid max-w-[1600px] grid-cols-1 gap-3 px-4 py-4 sm:grid-cols-3 sm:px-6 lg:px-8">
+      <div
+        className={`mx-auto grid max-w-[1600px] grid-cols-1 gap-3 px-4 py-4 sm:px-6 lg:px-8 ${
+          SHOW_MASTERS ? 'sm:grid-cols-3' : 'sm:grid-cols-2'
+        }`}
+      >
         {links.map((link) => {
           const Icon = link.icon;
           return (
@@ -538,6 +549,7 @@ export default function App() {
   const binMasterQuery = useQuery({
     queryKey: ['binMaster'],
     queryFn: getBinMaster,
+    enabled: SHOW_MASTERS,
     refetchInterval: refreshInterval,
     retry: 1
   });
@@ -545,6 +557,7 @@ export default function App() {
   const skuMasterQuery = useQuery({
     queryKey: ['skuMaster'],
     queryFn: getSkuMaster,
+    enabled: SHOW_MASTERS,
     refetchInterval: refreshInterval,
     retry: 1
   });
@@ -664,29 +677,35 @@ export default function App() {
     configQuery.isLoading ||
     dashboardQuery.isLoading ||
     transactionsQuery.isLoading ||
-    binMasterQuery.isLoading ||
-    skuMasterQuery.isLoading;
+    (SHOW_MASTERS &&
+      (binMasterQuery.isLoading || skuMasterQuery.isLoading));
   const error =
     configQuery.error ||
     dashboardQuery.error ||
     transactionsQuery.error ||
-    binMasterQuery.error ||
-    skuMasterQuery.error;
+    (SHOW_MASTERS && (binMasterQuery.error || skuMasterQuery.error));
   const isRefreshing =
     configQuery.isFetching ||
     dashboardQuery.isFetching ||
     transactionsQuery.isFetching ||
-    binMasterQuery.isFetching ||
-    skuMasterQuery.isFetching;
+    (SHOW_MASTERS &&
+      (binMasterQuery.isFetching || skuMasterQuery.isFetching));
 
   function retryAll() {
-    void Promise.all([
+    const requests: Promise<unknown>[] = [
       configQuery.refetch(),
       dashboardQuery.refetch(),
-      transactionsQuery.refetch(),
-      binMasterQuery.refetch(),
-      skuMasterQuery.refetch()
-    ]);
+      transactionsQuery.refetch()
+    ];
+
+    if (SHOW_MASTERS) {
+      requests.push(
+        binMasterQuery.refetch(),
+        skuMasterQuery.refetch()
+      );
+    }
+
+    void Promise.all(requests);
   }
 
   function updateFilter(
@@ -924,10 +943,11 @@ export default function App() {
               <InventoryTable rows={filteredRows} />
             </section>
 
-            <section
-              id="masters-section"
-              className="mt-10 scroll-mt-80 xl:scroll-mt-32"
-            >
+            {SHOW_MASTERS ? (
+              <section
+                id="masters-section"
+                className="mt-10 scroll-mt-80 xl:scroll-mt-32"
+              >
               <div className="mb-5">
                 <p className="text-sm font-semibold text-blue-700 dark:text-blue-300">
                   Section 3
@@ -957,7 +977,8 @@ export default function App() {
                   columns={SKU_MASTER_COLUMNS}
                 />
               </div>
-            </section>
+              </section>
+            ) : null}
           </main>
         </>
       )}

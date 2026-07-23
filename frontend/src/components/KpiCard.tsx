@@ -11,6 +11,8 @@ type CardTone =
 interface KpiCardProps {
   label: string;
   value: string;
+  secondaryValue?: string;
+  secondaryLabel?: string;
   description: string;
   icon: LucideIcon;
   tone?: CardTone;
@@ -32,6 +34,8 @@ const toneClasses: Record<CardTone, string> = {
 export function KpiCard({
   label,
   value,
+  secondaryValue,
+  secondaryLabel,
   description,
   icon: Icon,
   tone = 'blue'
@@ -43,9 +47,15 @@ export function KpiCard({
           <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
             {label}
           </p>
-          <p className="mt-2 truncate text-2xl font-bold tracking-tight text-slate-950 dark:text-white">
+          <p className="mt-2 text-2xl font-bold tracking-tight text-slate-950 dark:text-white">
             {value}
           </p>
+          {secondaryValue ? (
+            <p className="mt-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
+              {secondaryLabel ? `${secondaryLabel}: ` : ''}
+              {secondaryValue}
+            </p>
+          ) : null}
         </div>
         <span
           className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${toneClasses[tone]}`}

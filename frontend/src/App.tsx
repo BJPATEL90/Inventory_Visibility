@@ -3,24 +3,18 @@ import { useQuery } from '@tanstack/react-query';
 import {
   Activity,
   AlertCircle,
-  ArrowDownToLine,
-  ArrowUpFromLine,
-  BadgePercent,
   Boxes,
-  CalendarDays,
   CheckCircle2,
   ClipboardCheck,
   Database,
   Gauge,
-  IndianRupee,
   Moon,
   PackageCheck,
   RefreshCw,
   Scale,
   Sun,
   Target,
-  Warehouse,
-  WalletCards
+  Warehouse
 } from 'lucide-react';
 import {
   getActivityStatus,
@@ -45,17 +39,20 @@ import {
   filterTransactions,
   getFilterOptions,
   hasActiveFilters,
-  hasDimensionFilters
+  hasDimensionFilters,
+  getAccuracyStyle
 } from './dashboardUtils';
 import type {
   BinMasterRow,
   DashboardFilters,
   Kpis,
+  PeriodData,
   PeriodKey,
   SkuMasterRow
 } from './types';
 
 const PERIOD_KEYS: PeriodKey[] = [
+  'lastQuarter',
   'lastMonth',
   'monthToDate',
   'yesterday'
@@ -122,12 +119,6 @@ function formatRefreshTime(value?: string) {
 function accuracyTone(name: string) {
   if (name === 'Green') return 'green' as const;
   if (name === 'Yellow') return 'yellow' as const;
-  return 'red' as const;
-}
-
-function costCoverageTone(value: number) {
-  if (value >= 100) return 'green' as const;
-  if (value >= 95) return 'yellow' as const;
   return 'red' as const;
 }
 
@@ -250,9 +241,93 @@ function ErrorState({
   );
 }
 
-function KpiGrid({ kpis }: { kpis: Kpis }) {
+function AccuracyBanner({
+  periods
+}: {
+  periods: Record<PeriodKey, PeriodData>;
+}) {
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+    <section className="overflow-hidden rounded-3xl border border-blue-200 bg-gradient-to-r from-blue-950 via-blue-900 to-blue-800 p-5 shadow-lg shadow-blue-950/10 sm:p-6">
+      <div className="mb-5">
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-200">
+          Executive KPI
+        </p>
+        <h2 className="mt-1 text-2xl font-bold text-white">
+          Inventory Accuracy
+        </h2>
+      </div>
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {PERIOD_KEYS.map((periodKey) => {
+          const period = periods[periodKey];
+          const style = period.kpis.inventoryAccuracyStyle;
+          return (
+            <article
+              key={periodKey}
+              className="rounded-2xl border border-white/15 bg-white p-4 shadow-sm"
+            >
+              <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
+                {period.label}
+              </p>
+              <p
+                className="mt-2 text-3xl font-black tracking-tight"
+                style={{ color: style.text }}
+              >
+                {formatPercent(period.kpis.inventoryAccuracy)}
+              </p>
+              <p className="mt-2 text-xs text-slate-500">
+                {period.startDate} to {period.endDate}
+              </p>
+              <span
+                className="mt-3 block h-1.5 rounded-full"
+                style={{ backgroundColor: style.indicator }}
+              />
+            </article>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function KpiGrid({ kpis }: { kpis: Kpis }) {
+  const completionStyle = getAccuracyStyle(
+    kpis.cycleCountCompletion
+  );
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <KpiCard
+          label="Bin Accuracy"
+          value={formatPercent(kpis.binAccuracy)}
+          description="Accurate bins divided by counted unique Facility + Rack + Shelf bins."
+          icon={CheckCircle2}
+          tone={accuracyTone(kpis.binAccuracyStyle.name)}
+        />
+        <KpiCard
+          label="Planned Bin Count"
+          value={formatNumber(kpis.plannedBinCount)}
+          description="Planned count calculated from the Config sheet."
+          icon={Target}
+          tone="blue"
+        />
+        <KpiCard
+          label="Actual Bin Count"
+          value={formatNumber(kpis.actualBinCount)}
+          description="Unique Facility + Rack + Shelf combinations counted."
+          icon={PackageCheck}
+          tone="green"
+        />
+        <KpiCard
+          label="Cycle Count Completion"
+          value={formatPercent(kpis.cycleCountCompletion)}
+          description="Actual bins divided by planned bins."
+          icon={ClipboardCheck}
+          tone={accuracyTone(completionStyle.name)}
+        />
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
       <KpiCard
         label="Inventory Accuracy"
         value={formatPercent(kpis.inventoryAccuracy)}
@@ -261,128 +336,47 @@ function KpiGrid({ kpis }: { kpis: Kpis }) {
         tone={accuracyTone(kpis.inventoryAccuracyStyle.name)}
       />
       <KpiCard
-        label="Bin Accuracy"
-        value={formatPercent(kpis.binAccuracy)}
-        description="Accurate Facility + Rack + Shelf combinations."
-        icon={CheckCircle2}
-        tone={accuracyTone(kpis.binAccuracyStyle.name)}
-      />
-      <KpiCard
-        label="System Quantity"
+        label="System Qty and Value"
         value={formatNumber(kpis.systemQuantity)}
+        secondaryLabel="Value"
+        secondaryValue={formatCurrency(kpis.systemValue)}
         description="Total quantity recorded by the inventory system."
         icon={Database}
         tone="blue"
       />
       <KpiCard
-        label="Physical Quantity"
+        label="Physical Qty and Value"
         value={formatNumber(kpis.physicalQuantity)}
+        secondaryLabel="Value"
+        secondaryValue={formatCurrency(kpis.physicalValue)}
         description="Total quantity physically counted."
         icon={Boxes}
         tone="purple"
       />
       <KpiCard
-        label="Net Difference"
+        label="Net Diff Qty and Value"
         value={formatNumber(kpis.netDifference)}
+        secondaryLabel="Value"
+        secondaryValue={formatCurrency(kpis.netDifferenceValue)}
         description="Physical quantity minus system quantity."
         icon={Scale}
         tone={kpis.netDifference < 0 ? 'red' : 'blue'}
       />
       <KpiCard
-        label="Short Quantity"
-        value={formatNumber(kpis.shortQuantity)}
-        description="Absolute quantity from negative differences."
-        icon={ArrowDownToLine}
-        tone="red"
-      />
-      <KpiCard
-        label="Excess Quantity"
-        value={formatNumber(kpis.excessQuantity)}
-        description="Quantity from positive differences."
-        icon={ArrowUpFromLine}
-        tone="yellow"
-      />
-      <KpiCard
-        label="Total Inventory Value"
-        value={formatCurrency(kpis.totalInventoryValue)}
-        description="System quantity multiplied by COGS unit rate, excluding GST."
-        icon={IndianRupee}
-        tone="green"
-      />
-      <KpiCard
-        label="Physical Inventory Value"
-        value={formatCurrency(kpis.physicalValue)}
-        description="Physical quantity multiplied by COGS unit rate, excluding GST."
-        icon={WalletCards}
-        tone="purple"
-      />
-      <KpiCard
-        label="Net Difference Value"
-        value={formatCurrency(kpis.netDifferenceValue)}
-        description="Physical inventory value minus total system inventory value."
-        icon={Scale}
-        tone={kpis.netDifferenceValue < 0 ? 'red' : 'blue'}
-      />
-      <KpiCard
-        label="Short Value"
-        value={formatCurrency(kpis.shortValue)}
-        description="Absolute negative differences multiplied by COGS unit rate."
-        icon={ArrowDownToLine}
-        tone="red"
-      />
-      <KpiCard
-        label="Excess Value"
-        value={formatCurrency(kpis.excessValue)}
-        description="Positive differences multiplied by COGS unit rate."
-        icon={ArrowUpFromLine}
-        tone="yellow"
-      />
-      <KpiCard
-        label="Cost Coverage"
-        value={formatPercent(kpis.costCoverage)}
-        description={`${formatNumber(kpis.costedRowCount)} of ${formatNumber(
-          kpis.costedRowCount + kpis.missingCostRowCount
-        )} rows matched; ${formatNumber(
-          kpis.missingCostSkuCount
-        )} SKU(s) need a COGS rate.`}
-        icon={BadgePercent}
-        tone={costCoverageTone(kpis.costCoverage)}
-      />
-      <KpiCard
-        label="Planned Bin Count"
-        value={formatNumber(kpis.plannedBinCount)}
-        description="Planned count calculated from the Config sheet."
-        icon={Target}
-        tone="blue"
-      />
-      <KpiCard
-        label="Actual Bin Count"
-        value={formatNumber(kpis.actualBinCount)}
-        description="Unique Facility + Rack + Shelf combinations counted."
-        icon={PackageCheck}
-        tone="green"
-      />
-      <KpiCard
-        label="Cycle Count Completion"
-        value={formatPercent(kpis.cycleCountCompletion)}
-        description="Actual bins divided by planned bins."
-        icon={ClipboardCheck}
-        tone="purple"
-      />
-      <KpiCard
-        label="NTF Count"
-        value={formatNumber(kpis.ntfCount)}
-        description="Rows where the remark contains NTF."
+        label="NTF Qty and Value"
+        value={formatNumber(kpis.ntfQuantity)}
+        secondaryLabel="Value"
+        secondaryValue={formatCurrency(kpis.ntfValue)}
+        description={`${formatNumber(kpis.ntfCount)} row(s) have a remark containing NTF.`}
         icon={Activity}
         tone="orange"
       />
+      </div>
     </div>
   );
 }
 
 export default function App() {
-  const [selectedPeriod, setSelectedPeriod] =
-    useState<PeriodKey>('monthToDate');
   const [filters, setFilters] =
     useState<DashboardFilters>({ ...EMPTY_FILTERS });
   const [darkMode, setDarkMode] = useState(() => {
@@ -436,7 +430,7 @@ export default function App() {
   const transactions = transactionsQuery.data?.data || [];
   const binMaster = binMasterQuery.data?.data || [];
   const skuMaster = skuMasterQuery.data?.data || [];
-  const period = dashboard?.periods[selectedPeriod];
+  const period = dashboard?.periods.monthToDate;
   const filtersAreActive = hasActiveFilters(filters);
   const dimensionFiltersAreActive = hasDimensionFilters(filters);
 
@@ -473,6 +467,42 @@ export default function App() {
 
     return calculateFilteredKpis(filteredRows, plannedBins);
   }, [config, filteredRows, filters.date, filtersAreActive, period]);
+
+  const bannerPeriods = useMemo(() => {
+    if (!dashboard || !config || !dimensionFiltersAreActive) {
+      return dashboard?.periods || null;
+    }
+
+    const periodCopies = { ...dashboard.periods };
+    const dimensionFilters = { ...filters, date: '' };
+
+    PERIOD_KEYS.forEach((periodKey) => {
+      const periodData = dashboard.periods[periodKey];
+      const rows = filterTransactions(
+        transactions,
+        dimensionFilters,
+        periodData.startDate,
+        periodData.endDate
+      );
+
+      periodCopies[periodKey] = {
+        ...periodData,
+        rowCount: rows.length,
+        kpis: calculateFilteredKpis(
+          rows,
+          periodData.kpis.plannedBinCount
+        )
+      };
+    });
+
+    return periodCopies;
+  }, [
+    config,
+    dashboard,
+    dimensionFiltersAreActive,
+    filters,
+    transactions
+  ]);
 
   const chartData = useMemo(
     () => calculateCharts(filteredRows),
@@ -542,14 +572,6 @@ export default function App() {
     setFilters((current) => ({
       ...current,
       [name]: value
-    }));
-  }
-
-  function choosePeriod(periodKey: PeriodKey) {
-    setSelectedPeriod(periodKey);
-    setFilters((current) => ({
-      ...current,
-      date: ''
     }));
   }
 
@@ -627,41 +649,6 @@ export default function App() {
         </div>
       ) : (
         <>
-          <section className="border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
-            <div className="mx-auto flex max-w-[1600px] flex-col gap-4 px-4 py-5 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
-              <div>
-                <div className="flex items-center gap-2 text-sm font-semibold text-blue-700 dark:text-blue-300">
-                  <CalendarDays className="h-4 w-4" />
-                  Reporting period
-                </div>
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                  Selecting a specific Date in the filter bar overrides this
-                  period.
-                </p>
-              </div>
-
-              <div className="inline-flex w-full rounded-xl bg-slate-100 p-1 dark:bg-slate-800 lg:w-auto">
-                {PERIOD_KEYS.map((periodKey) => {
-                  const isSelected = selectedPeriod === periodKey;
-                  return (
-                    <button
-                      key={periodKey}
-                      type="button"
-                      onClick={() => choosePeriod(periodKey)}
-                      className={`flex-1 rounded-lg px-4 py-2 text-sm font-semibold transition lg:flex-none ${
-                        isSelected
-                          ? 'bg-white text-blue-700 shadow-sm dark:bg-slate-950 dark:text-blue-300'
-                          : 'text-slate-600 hover:text-slate-950 dark:text-slate-400 dark:hover:text-white'
-                      }`}
-                    >
-                      {dashboard.periods[periodKey].label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          </section>
-
           <FilterBar
             filters={filters}
             options={filterOptions}
@@ -670,7 +657,11 @@ export default function App() {
           />
 
           <main className="mx-auto max-w-[1600px] px-4 py-8 sm:px-6 lg:px-8">
-            <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <AccuracyBanner
+              periods={bannerPeriods || dashboard.periods}
+            />
+
+            <div className="mb-6 mt-8 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
               <div>
                 <p className="text-sm font-semibold text-blue-700 dark:text-blue-300">
                   {filters.date
@@ -683,13 +674,14 @@ export default function App() {
                 <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
                   {filtersAreActive
                     ? `${formatNumber(filteredRows.length)} matching rows`
-                    : `${formatNumber(period?.rowCount || 0)} rows in this period`}
+                    : `${formatNumber(period?.rowCount || 0)} Month-to-Date rows`}
                 </p>
               </div>
               <span className="inline-flex w-fit items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
                 <Database className="h-3.5 w-3.5 text-blue-600" />
-                {formatNumber(dashboard.sourceSummary.combinedRowCount)} combined
-                rows
+                {formatNumber(
+                  dashboard.sourceSummary.totalTransactionRowCount
+                )} current + historical rows
               </span>
             </div>
 
@@ -718,8 +710,7 @@ export default function App() {
                       Dashboard Charts
                     </h2>
                     <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                      All charts follow the selected reporting period and
-                      dashboard filters.
+                      Charts follow the Date and other dashboard filters.
                     </p>
                   </div>
 
@@ -784,6 +775,17 @@ export default function App() {
                 </section>
 
                 <section className="mt-10">
+                  <div className="mb-5">
+                    <p className="text-sm font-semibold text-blue-700 dark:text-blue-300">
+                      Section 2
+                    </p>
+                    <h2 className="mt-1 text-2xl font-bold tracking-tight">
+                      Inventory Transactions
+                    </h2>
+                    <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                      Search, sort, paginate, and download the filtered rows as CSV.
+                    </p>
+                  </div>
                   <InventoryTable rows={filteredRows} />
                 </section>
               </>
@@ -792,10 +794,10 @@ export default function App() {
             <section className="mt-10">
               <div className="mb-5">
                 <p className="text-sm font-semibold text-blue-700 dark:text-blue-300">
-                  Reference data
+                  Section 3
                 </p>
                 <h2 className="mt-1 text-2xl font-bold tracking-tight">
-                  Master Data
+                  Masters
                 </h2>
                 <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
                   These tables are read-only. Update master records directly in

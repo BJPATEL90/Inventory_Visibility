@@ -15,9 +15,9 @@ are installed, they continue to run when your laptop is switched off.
 
 ## Version 2 Phase 1
 
-Version 2 Phase 1 adds read-only cost integration and value-based KPIs. Inventory
-rows are matched to the `COGS` sheet by SKU. All values use Indian rupees and
-`Unit Rate (Excluding Gst)`.
+Version 2 adds read-only cost integration, value-based KPIs, and a four-period
+Inventory Accuracy banner. Inventory rows are matched to the `COGS` sheet by
+SKU. All values use Indian rupees and `Unit Rate (Excluding Gst)`.
 
 Added KPIs:
 
@@ -30,6 +30,10 @@ Added KPIs:
 
 Rows without a valid matching COGS rate are excluded from value totals and
 reported through Cost Coverage. Version 1 quantity calculations are unchanged.
+
+The banner shows Last Quarter, Last Month, Month to Date, and Yesterday. The
+read-only `Q1-AMJ26` sheet supplies April-June 2026 history and past-date
+transactions. The application never changes that sheet.
 
 ## Project folders
 
@@ -106,6 +110,18 @@ Important:
 - GST is not included in Version 2 value KPIs.
 - Duplicate SKUs should be removed. The first valid cost row is used.
 - Maintain costs directly in Google Sheets; the dashboard never changes COGS.
+
+## 3A. Check the Q1 history sheet
+
+The historical sheet must be named `Q1-AMJ26`. It is read-only for the
+dashboard and should contain:
+
+```text
+Facility | Date | Rack | Sku's | Item Name | Shelf | Batch | Vendor Batch number | Pack | Box | Loose | Phy | Sys | Diff. | Remarks | Cogs/Unit | Total Value
+```
+
+`Cogs/Unit` is used for historical values. If it is blank, the current `COGS`
+rate is used as a fallback. `SL_AMB` is displayed as `SL_AMBIENT`.
 
 ## 4. Create or check the Config sheet
 
@@ -248,7 +264,9 @@ Run these functions one at a time from the function dropdown:
 2. `testPhase1()` reads the real source sheets and prints the combined counts,
    skipped sheets, periods, KPIs, and last refresh time.
 3. `testMasters()` prints the Bin Master and SKU Master row counts and samples.
-4. `testEmailPreview()` creates the email HTML and saves a temporary preview
+4. `testQuarterData()` checks the read-only `Q1-AMJ26` rows, historical date
+   range, and all four reporting periods.
+5. `testEmailPreview()` creates the email HTML and saves a temporary preview
    file in Google Drive. It does not send an email.
 
 For each test:
@@ -465,6 +483,8 @@ Apps Script is still deployed separately through the Apps Script editor.
 
 - [ ] Run `testKpiCalculations()` and confirm it completes without errors.
 - [ ] Run `testValueKpis()` and review Cost Coverage and missing-cost SKUs.
+- [ ] Run `testQuarterData()` and confirm the historical row count, first date,
+  last date, and Last Quarter KPI values.
 - [ ] Run `testPhase1()` and compare the combined row count with the source
   sheets.
 - [ ] Confirm System Quantity is the sum of `Sys`.
@@ -491,8 +511,10 @@ Apps Script is still deployed separately through the Apps Script editor.
 
 ## B. Filters and states
 
-- [ ] Select each reporting period: Last Month, Month to Date, and Yesterday.
+- [ ] Confirm the Inventory Accuracy banner shows Last Quarter, Last Month,
+  Month to Date, and Yesterday.
 - [ ] Test Date, Facility, Rack, SKU, Batch, and Remark filters.
+- [ ] Select a date from `Q1-AMJ26` and confirm its transaction rows appear.
 - [ ] Confirm KPI cards, all charts, and the transaction table change together.
 - [ ] Click **Clear Filters** and confirm all filters reset.
 - [ ] Confirm the loading message appears during a refresh.

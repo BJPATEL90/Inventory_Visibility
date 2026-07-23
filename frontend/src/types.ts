@@ -1,4 +1,8 @@
-export type PeriodKey = 'lastMonth' | 'monthToDate' | 'yesterday';
+export type PeriodKey =
+  | 'lastQuarter'
+  | 'lastMonth'
+  | 'monthToDate'
+  | 'yesterday';
 
 export interface ApiResponse<T> {
   success: boolean;
@@ -38,6 +42,8 @@ export interface Kpis {
   actualBinCount: number;
   cycleCountCompletion: number;
   ntfCount: number;
+  ntfQuantity: number;
+  ntfValue: number;
 }
 
 export interface ZeroActivity {
@@ -61,6 +67,8 @@ export interface DashboardData {
   periods: Record<PeriodKey, PeriodData>;
   sourceSummary: {
     combinedRowCount: number;
+    historicalRowCount: number;
+    totalTransactionRowCount: number;
     rowsByFacility: Record<string, number>;
     skippedSourceSheets: string[];
     costSummary: {
@@ -92,6 +100,7 @@ export interface DashboardConfig {
 
 export interface InventoryTransaction {
   id: string;
+  sourceType: 'current' | 'historical';
   facility: string;
   date: string;
   rack: string;

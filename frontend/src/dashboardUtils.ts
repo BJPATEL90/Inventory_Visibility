@@ -80,6 +80,8 @@ export function calculateFilteredKpis(
   let costedRowCount = 0;
   let missingCostRowCount = 0;
   let ntfCount = 0;
+  let ntfQuantity = 0;
+  let ntfValue = 0;
   const binDifferences = new Map<string, number>();
   const missingCostSkus = new Set<string>();
 
@@ -119,6 +121,11 @@ export function calculateFilteredKpis(
 
     if (/NTF/i.test(row.remark)) {
       ntfCount += 1;
+      ntfQuantity += Math.abs(row.difference);
+      if (hasCost) {
+        ntfValue +=
+          Math.abs(row.difference) * (row.unitCost as number);
+      }
     }
 
     if (row.rack || row.shelf) {
@@ -172,7 +179,9 @@ export function calculateFilteredKpis(
     plannedBinCount: round(plannedBinCount),
     actualBinCount,
     cycleCountCompletion: round(completion),
-    ntfCount
+    ntfCount,
+    ntfQuantity: round(ntfQuantity),
+    ntfValue: round(ntfValue)
   };
 }
 

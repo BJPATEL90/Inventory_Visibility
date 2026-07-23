@@ -45,6 +45,39 @@
 
             <tr>
               <td style="padding:28px 32px 10px 32px;">
+                <div style="color:#0f172a; font-size:18px; line-height:25px; font-weight:bold;">
+                  Inventory Accuracy
+                </div>
+                <div style="margin-top:4px; margin-bottom:16px; color:#64748b; font-size:13px; line-height:20px;">
+                  Last Quarter, Last Month, Month to Date, and Yesterday.
+                </div>
+
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%; margin-bottom:18px;">
+                  <tr>
+                    <? for (var periodIndex = 0; periodIndex < report.periodSummary.length; periodIndex += 1) {
+                      var summary = report.periodSummary[periodIndex];
+                    ?>
+                      <td width="25%" valign="top" style="width:25%; padding:0 4px;">
+                        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%; background-color:<?= summary.backgroundColor ?>; border-top:4px solid <?= summary.indicatorColor ?>; border-radius:9px;">
+                          <tr>
+                            <td align="center" style="padding:14px 6px;">
+                              <div style="color:#64748b; font-size:10px; line-height:14px; font-weight:bold; text-transform:uppercase;">
+                                <?= summary.label ?>
+                              </div>
+                              <div style="margin-top:5px; color:<?= summary.textColor ?>; font-size:20px; line-height:27px; font-weight:bold;">
+                                <?= summary.value ?>
+                              </div>
+                              <div style="margin-top:4px; color:#64748b; font-size:9px; line-height:13px;">
+                                <?= summary.dateRange ?>
+                              </div>
+                            </td>
+                          </tr>
+                        </table>
+                      </td>
+                    <? } ?>
+                  </tr>
+                </table>
+
                 <? if (!report.hasActivity && report.zeroActivity) { ?>
                   <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%; background-color:#fffbeb; border:1px solid #fde68a; border-radius:12px;">
                     <tr>
@@ -65,10 +98,10 @@
                   </table>
                 <? } else { ?>
                   <div style="color:#0f172a; font-size:18px; line-height:25px; font-weight:bold;">
-                    Executive KPI
+                    Yesterday's KPI Detail
                   </div>
                   <div style="margin-top:4px; margin-bottom:16px; color:#64748b; font-size:13px; line-height:20px;">
-                    Summary of yesterday's physical inventory cycle count.
+                    Quantity, value, bin accuracy, completion, and NTF summary.
                   </div>
 
                   <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;">

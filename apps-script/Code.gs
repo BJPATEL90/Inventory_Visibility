@@ -9,12 +9,13 @@
  * 1. Creates Config and Activity_Status when they are missing.
  * 2. Reads the five inventory sheets without changing them.
  * 3. Combines inventory rows in memory.
- * 4. Calculates Last Month, Month to Date, and Yesterday KPIs.
+ * 4. Calculates Last Quarter, Last Month, Month to Date, and Yesterday KPIs.
  * 5. Exposes a small JSON API.
  * 6. Creates a cloud refresh trigger.
  * 7. Provides test functions that print results in Apps Script logs.
  * 8. Sends the daily HTML email report from Google's cloud.
  * 9. Joins the read-only COGS sheet and calculates Version 2 value KPIs.
+ * 10. Reads Q1-AMJ26 as read-only history for quarter and past-date reporting.
  */
 
 const SPREADSHEET_ID = '1uB9hiqI8z46_fYxiB1syRwNNw0TM_ZV2NCYZcAVmWIk';
@@ -45,11 +46,30 @@ const INVENTORY_HEADERS = [
 ];
 
 const COST_SHEET_NAME = 'COGS';
+const HISTORICAL_SHEET_NAME = 'Q1-AMJ26';
 const COST_HEADERS = [
   'SKU',
   'Product Name',
   'Unit Rate (Excluding Gst)',
   'GST Rate'
+];
+const HISTORICAL_HEADERS = [
+  'Facility',
+  'Date',
+  'Rack',
+  "Sku's",
+  'Item Name',
+  'Shelf',
+  'Batch',
+  'Vendor Batch number',
+  'Pack',
+  'Box',
+  'Loose',
+  'Phy',
+  'Sys',
+  'Diff.',
+  'Remarks',
+  'Cogs/Unit'
 ];
 
 // These values are written only when Config is first prepared.
@@ -77,7 +97,7 @@ const ACTIVITY_REASONS = [
   'Other'
 ];
 
-const DASHBOARD_CACHE_KEY = 'inventory_dashboard_v2_value_kpis_v1';
+const DASHBOARD_CACHE_KEY = 'inventory_dashboard_v2_period_banner_v1';
 const LAST_REFRESH_PROPERTY = 'INVENTORY_LAST_REFRESH_TIME';
 const LAST_EMAIL_SENT_PROPERTY = 'INVENTORY_LAST_EMAIL_SENT_TIME';
 const REFRESH_HANDLER = 'refreshDashboardCache';
@@ -252,10 +272,11 @@ function getConfig() {
  * The live source sheets use "Diff." while the requested logical name is
  * "Diff". Header matching ignores case, extra spaces, and periods so both work.
  */
-function getCombinedData() {
-  const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
+function getCombinedData(optionalSpreadsheet, optionalCostMap) {
+  const spreadsheet =
+    optionalSpreadsheet || SpreadsheetApp.openById(SPREADSHEET_ID);
   const combinedRows = [];
-  const costMap = readCostMap_(spreadsheet);
+  const costMap = optionalCostMap || readCostMap_(spreadsheet);
   const timeZone = getTimeZone_();
 
   SOURCE_SHEETS.forEach(function (sheetName) {
@@ -294,6 +315,7 @@ function getCombinedData() {
 
       combinedRows.push({
         id: sheetName + '-' + String(rowIndex + 1),
+        sourceType: 'current',
         facility: sheetName,
         date: normalizeDate_(row[indexes['Date']], timeZone),
         rack: cleanText_(row[indexes['Rack']]),
@@ -331,10 +353,123 @@ function getCombinedData() {
 }
 
 /**
- * Returns combined transactions with the newest dates first.
+ * Reads the Q1-AMJ26 historical sheet without changing it.
+ *
+ * Historical dates are used by Last Quarter, Last Month, and past-date
+ * transaction filtering. The sheet's own Cogs/Unit is preferred so historical
+ * values do not change when the current COGS master is updated.
+ */
+function getHistoricalData(optionalSpreadsheet, optionalCostMap) {
+  const spreadsheet =
+    optionalSpreadsheet || SpreadsheetApp.openById(SPREADSHEET_ID);
+  const costMap = optionalCostMap || readCostMap_(spreadsheet);
+  const sheet = findSheetIgnoreCase_(
+    spreadsheet,
+    HISTORICAL_SHEET_NAME
+  );
+  const historicalRows = [];
+
+  if (!sheet || sheet.getLastRow() <= 1 || sheet.getLastColumn() === 0) {
+    return historicalRows;
+  }
+
+  const values = sheet
+    .getRange(1, 1, sheet.getLastRow(), sheet.getLastColumn())
+    .getValues();
+  const indexes = historicalHeaderIndexes_(values[0], sheet.getName());
+  const timeZone = getTimeZone_();
+
+  for (let rowIndex = 1; rowIndex < values.length; rowIndex += 1) {
+    const row = values[rowIndex];
+
+    if (HISTORICAL_HEADERS.every(function (header) {
+      return isBlank_(row[indexes[header]]);
+    })) {
+      continue;
+    }
+
+    const skuCode = cleanText_(row[indexes["Sku's"]]);
+    const normalizedSku = normalizeSku_(skuCode);
+    const currentCostRecord =
+      normalizedSku &&
+      Object.prototype.hasOwnProperty.call(costMap, normalizedSku)
+        ? costMap[normalizedSku]
+        : null;
+    const historicalUnitCost = optionalNumber_(
+      row[indexes['Cogs/Unit']]
+    );
+    const unitCost = historicalUnitCost !== null &&
+      historicalUnitCost >= 0
+      ? historicalUnitCost
+      : currentCostRecord
+        ? currentCostRecord.unitCost
+        : null;
+    const physicalQuantity = toNumber_(row[indexes['Phy']]);
+    const systemQuantity = toNumber_(row[indexes['Sys']]);
+    const rawDifference = row[indexes['Diff.']];
+    const difference = isBlank_(rawDifference)
+      ? physicalQuantity - systemQuantity
+      : toNumber_(rawDifference);
+
+    historicalRows.push({
+      id: HISTORICAL_SHEET_NAME + '-' + String(rowIndex + 1),
+      sourceType: 'historical',
+      facility: normalizeFacility_(row[indexes['Facility']]),
+      date: normalizeDate_(row[indexes['Date']], timeZone),
+      rack: cleanText_(row[indexes['Rack']]),
+      skuCode: skuCode,
+      itemName: cleanText_(row[indexes['Item Name']]),
+      shelf: cleanText_(row[indexes['Shelf']]),
+      batch: cleanText_(row[indexes['Batch']]),
+      vendorBatchNumber: cleanText_(
+        row[indexes['Vendor Batch number']]
+      ),
+      pack: toNumber_(row[indexes['Pack']]),
+      box: toNumber_(row[indexes['Box']]),
+      loose: toNumber_(row[indexes['Loose']]),
+      physicalQuantity: physicalQuantity,
+      systemQuantity: systemQuantity,
+      difference: difference,
+      costAvailable: unitCost !== null,
+      unitCost: unitCost,
+      gstRate: currentCostRecord ? currentCostRecord.gstRate : null,
+      systemValue: unitCost === null
+        ? null
+        : round_(systemQuantity * unitCost, 2),
+      physicalValue: unitCost === null
+        ? null
+        : round_(physicalQuantity * unitCost, 2),
+      differenceValue: unitCost === null
+        ? null
+        : round_(difference * unitCost, 2),
+      remark: cleanText_(row[indexes['Remarks']])
+    });
+  }
+
+  return historicalRows;
+}
+
+/**
+ * Reads current and historical inventory with one spreadsheet connection.
+ */
+function getAllInventoryData_() {
+  const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const costMap = readCostMap_(spreadsheet);
+  const currentRows = getCombinedData(spreadsheet, costMap);
+  const historicalRows = getHistoricalData(spreadsheet, costMap);
+
+  return {
+    currentRows: currentRows,
+    historicalRows: historicalRows,
+    allRows: currentRows.concat(historicalRows)
+  };
+}
+
+/**
+ * Returns current and Q1 historical transactions with newest dates first.
  */
 function getTransactions() {
-  const rows = getCombinedData();
+  const rows = getAllInventoryData_().allRows;
 
   rows.sort(function (first, second) {
     const dateResult = String(second.date).localeCompare(String(first.date));
@@ -404,6 +539,8 @@ function calculateKpis(inventoryRows, options) {
   let costedRowCount = 0;
   let missingCostRowCount = 0;
   let ntfCount = 0;
+  let ntfQuantity = 0;
+  let ntfValue = 0;
   const binDifferences = {};
   const missingCostSkus = {};
 
@@ -447,6 +584,10 @@ function calculateKpis(inventoryRows, options) {
 
     if (/NTF/i.test(cleanText_(row.remark))) {
       ntfCount += 1;
+      ntfQuantity += Math.abs(difference);
+      if (unitCost !== null && unitCost >= 0) {
+        ntfValue += Math.abs(difference) * unitCost;
+      }
     }
 
     const binKey = binKey_(row);
@@ -499,7 +640,9 @@ function calculateKpis(inventoryRows, options) {
     plannedBinCount: round_(plannedBinCount, 2),
     actualBinCount: actualBinCount,
     cycleCountCompletion: round_(completion, 2),
-    ntfCount: ntfCount
+    ntfCount: ntfCount,
+    ntfQuantity: round_(ntfQuantity, 2),
+    ntfValue: round_(ntfValue, 2)
   };
 }
 
@@ -756,7 +899,7 @@ function sendInventoryEmail() {
 
   const dashboard = buildDashboard_();
   const period = dashboard.periods.yesterday;
-  const report = buildEmailReport_(config, period);
+  const report = buildEmailReport_(config, period, dashboard.periods);
   const htmlBody = renderEmailTemplate_(report);
   const mailOptions = {
     to: config.emailTo,
@@ -807,7 +950,7 @@ function testEmailPreview() {
   const config = getConfig();
   const dashboard = buildDashboard_();
   const period = dashboard.periods.yesterday;
-  const report = buildEmailReport_(config, period);
+  const report = buildEmailReport_(config, period, dashboard.periods);
   const html = renderEmailTemplate_(report);
   const result = {
     passed: true,
@@ -815,9 +958,43 @@ function testEmailPreview() {
     reportDate: period.endDate,
     hasActivity: report.hasActivity,
     zeroActivity: report.zeroActivity,
+    periodSummaryCount: report.periodSummary.length,
     metricCount: report.metrics.length,
     dashboardUrl: report.dashboardUrl,
     htmlLength: html.length
+  };
+
+  console.log(JSON.stringify(result, null, 2));
+  return result;
+}
+
+/**
+ * Tests the read-only Q1-AMJ26 history and the four dashboard periods.
+ *
+ * Run this after pasting Version 2. It does not change any sheet.
+ */
+function testQuarterData() {
+  const inventoryData = getAllInventoryData_();
+  const dashboard = buildDashboard_();
+  const historicalDates = inventoryData.historicalRows
+    .map(function (row) {
+      return row.date;
+    })
+    .filter(Boolean)
+    .sort();
+  const result = {
+    passed: true,
+    historicalSheetName: HISTORICAL_SHEET_NAME,
+    currentRowCount: inventoryData.currentRows.length,
+    historicalRowCount: inventoryData.historicalRows.length,
+    totalTransactionRowCount: inventoryData.allRows.length,
+    firstHistoricalDate:
+      historicalDates.length > 0 ? historicalDates[0] : '',
+    lastHistoricalDate:
+      historicalDates.length > 0
+        ? historicalDates[historicalDates.length - 1]
+        : '',
+    periods: dashboard.periods
   };
 
   console.log(JSON.stringify(result, null, 2));
@@ -841,6 +1018,8 @@ function testEmailPreview() {
  * Cost Coverage 66.67
  * Actual Bins 2
  * NTF Count 1
+ * NTF Quantity 2
+ * NTF Value 20
  */
 function testKpiCalculations() {
   const sampleRows = [
@@ -916,6 +1095,8 @@ function testKpiCalculations() {
   assertEqual_(result.plannedBinCount, 100, 'Planned Bin Count');
   assertEqual_(result.cycleCountCompletion, 2, 'Completion');
   assertEqual_(result.ntfCount, 1, 'NTF Count');
+  assertEqual_(result.ntfQuantity, 2, 'NTF Quantity');
+  assertEqual_(result.ntfValue, 20, 'NTF Value');
 
   const output = {
     passed: true,
@@ -1008,11 +1189,12 @@ function testMasters() {
 }
 
 /**
- * Builds the Last Month, Month to Date, and Yesterday summary.
+ * Builds the Last Quarter, Last Month, Month to Date, and Yesterday summary.
  */
 function buildDashboard_() {
   const config = getConfig();
-  const rows = getCombinedData();
+  const inventoryData = getAllInventoryData_();
+  const rows = inventoryData.allRows;
   const ranges = reportingRanges_();
   const periods = {};
 
@@ -1045,14 +1227,17 @@ function buildDashboard_() {
     dashboardName: config.dashboardName,
     theme: config.theme,
     periods: periods,
-    sourceSummary: sourceSummary_(rows)
+    sourceSummary: sourceSummary_(
+      inventoryData.currentRows,
+      inventoryData.historicalRows
+    )
   };
 }
 
 /**
  * Creates the simple view model consumed by EmailTemplate.html.
  */
-function buildEmailReport_(config, period) {
+function buildEmailReport_(config, period, periods) {
   const kpis = period.kpis;
   const inventoryStyle = getAccuracyStyle(kpis.inventoryAccuracy);
   const binStyle = getAccuracyStyle(kpis.binAccuracy);
@@ -1098,61 +1283,34 @@ function buildEmailReport_(config, period) {
               : ''
         }
       : null,
+    periodSummary: [
+      periods.lastQuarter,
+      periods.lastMonth,
+      periods.monthToDate,
+      periods.yesterday
+    ].map(function (summaryPeriod) {
+      const style = getAccuracyStyle(
+        summaryPeriod.kpis.inventoryAccuracy
+      );
+      return {
+        label: summaryPeriod.label,
+        value: formatEmailPercent_(
+          summaryPeriod.kpis.inventoryAccuracy
+        ),
+        dateRange:
+          formatEmailDate_(summaryPeriod.startDate) +
+          ' - ' +
+          formatEmailDate_(summaryPeriod.endDate),
+        textColor: style.text,
+        backgroundColor: style.background,
+        indicatorColor: style.indicator
+      };
+    }),
     metrics: [
-      emailMetric_(
-        'Inventory Accuracy',
-        formatEmailPercent_(kpis.inventoryAccuracy),
-        inventoryStyle
-      ),
       emailMetric_(
         'Bin Accuracy',
         formatEmailPercent_(kpis.binAccuracy),
         binStyle
-      ),
-      emailMetric_(
-        'System Quantity',
-        formatEmailNumber_(kpis.systemQuantity),
-        standardStyle
-      ),
-      emailMetric_(
-        'Physical Quantity',
-        formatEmailNumber_(kpis.physicalQuantity),
-        standardStyle
-      ),
-      emailMetric_(
-        'Net Difference',
-        formatEmailNumber_(kpis.netDifference),
-        standardStyle
-      ),
-      emailMetric_(
-        'Total Inventory Value',
-        formatEmailCurrency_(kpis.totalInventoryValue),
-        valueStyle
-      ),
-      emailMetric_(
-        'Physical Inventory Value',
-        formatEmailCurrency_(kpis.physicalValue),
-        valueStyle
-      ),
-      emailMetric_(
-        'Net Difference Value',
-        formatEmailCurrency_(kpis.netDifferenceValue),
-        kpis.netDifferenceValue < 0 ? warningStyle : standardStyle
-      ),
-      emailMetric_(
-        'Short Value',
-        formatEmailCurrency_(kpis.shortValue),
-        warningStyle
-      ),
-      emailMetric_(
-        'Excess Value',
-        formatEmailCurrency_(kpis.excessValue),
-        warningStyle
-      ),
-      emailMetric_(
-        'Cost Coverage',
-        formatEmailPercent_(kpis.costCoverage),
-        coverageStyle
       ),
       emailMetric_(
         'Planned Bin Count',
@@ -1170,19 +1328,42 @@ function buildEmailReport_(config, period) {
         standardStyle
       ),
       emailMetric_(
-        'Short Quantity',
-        formatEmailNumber_(kpis.shortQuantity),
+        'Inventory Accuracy',
+        formatEmailPercent_(kpis.inventoryAccuracy),
+        inventoryStyle
+      ),
+      emailMetric_(
+        'System Qty / Value',
+        formatEmailNumber_(kpis.systemQuantity) +
+          ' | ' +
+          formatEmailCurrency_(kpis.systemValue),
+        valueStyle
+      ),
+      emailMetric_(
+        'Physical Qty / Value',
+        formatEmailNumber_(kpis.physicalQuantity) +
+          ' | ' +
+          formatEmailCurrency_(kpis.physicalValue),
+        valueStyle
+      ),
+      emailMetric_(
+        'Net Difference Qty / Value',
+        formatEmailNumber_(kpis.netDifference) +
+          ' | ' +
+          formatEmailCurrency_(kpis.netDifferenceValue),
+        kpis.netDifference < 0 ? warningStyle : standardStyle
+      ),
+      emailMetric_(
+        'NTF Qty / Value',
+        formatEmailNumber_(kpis.ntfQuantity) +
+          ' | ' +
+          formatEmailCurrency_(kpis.ntfValue),
         warningStyle
       ),
       emailMetric_(
-        'Excess Quantity',
-        formatEmailNumber_(kpis.excessQuantity),
-        warningStyle
-      ),
-      emailMetric_(
-        'NTF Count',
-        formatEmailNumber_(kpis.ntfCount),
-        warningStyle
+        'Cost Coverage',
+        formatEmailPercent_(kpis.costCoverage),
+        coverageStyle
       )
     ]
   };
@@ -1218,6 +1399,11 @@ function buildPlainTextEmail_(report) {
     report.dashboardName,
     'Reporting date: ' + report.reportingDate
   ];
+
+  lines.push('Inventory Accuracy Summary');
+  report.periodSummary.forEach(function (period) {
+    lines.push(period.label + ': ' + period.value);
+  });
 
   if (!report.hasActivity && report.zeroActivity) {
     lines.push(report.zeroActivity.message);
@@ -1274,7 +1460,7 @@ function formatEmailPercent_(value) {
 }
 
 /**
- * Creates the three reporting date ranges using the script time zone.
+ * Creates the four fixed reporting date ranges using the script time zone.
  */
 function reportingRanges_() {
   const todayText = Utilities.formatDate(
@@ -1308,8 +1494,31 @@ function reportingRanges_() {
     0,
     0
   );
+  const currentQuarterStartMonth =
+    Math.floor(today.getMonth() / 3) * 3;
+  const lastQuarterStart = new Date(
+    today.getFullYear(),
+    currentQuarterStartMonth - 3,
+    1,
+    12,
+    0,
+    0
+  );
+  const lastQuarterEnd = new Date(
+    today.getFullYear(),
+    currentQuarterStartMonth,
+    0,
+    12,
+    0,
+    0
+  );
 
   return {
+    lastQuarter: {
+      label: 'Last Quarter',
+      startDate: formatDate_(lastQuarterStart),
+      endDate: formatDate_(lastQuarterEnd)
+    },
     lastMonth: {
       label: 'Last Month',
       startDate: formatDate_(lastMonthStart),
@@ -1342,6 +1551,10 @@ function plannedBinCount_(options, config) {
 
   if (periodKey === 'lastMonth') {
     return dailyPlan * workingDays;
+  }
+
+  if (periodKey === 'lastQuarter') {
+    return dailyPlan * workingDays * 3;
   }
 
   const completedDays = countWorkingDays_(
@@ -1397,7 +1610,8 @@ function zeroActivityMessage_(range) {
 /**
  * Summarizes rows by source sheet.
  */
-function sourceSummary_(rows) {
+function sourceSummary_(rows, historicalRows) {
+  const history = Array.isArray(historicalRows) ? historicalRows : [];
   const rowsByFacility = {};
   const missingCostSkus = {};
   let costedRowCount = 0;
@@ -1420,6 +1634,8 @@ function sourceSummary_(rows) {
 
   return {
     combinedRowCount: rows.length,
+    historicalRowCount: history.length,
+    totalTransactionRowCount: rows.length + history.length,
     rowsByFacility: rowsByFacility,
     costSummary: {
       costSheetName: COST_SHEET_NAME,
@@ -1592,6 +1808,34 @@ function inventoryHeaderIndexes_(headerRow, sheetName) {
 }
 
 /**
+ * Maps the Q1-AMJ26 historical headers to column indexes.
+ */
+function historicalHeaderIndexes_(headerRow, sheetName) {
+  const normalizedHeaders = headerRow.map(normalizeHeader_);
+  const indexes = {};
+
+  HISTORICAL_HEADERS.forEach(function (requiredHeader) {
+    const index = normalizedHeaders.indexOf(
+      normalizeHeader_(requiredHeader)
+    );
+
+    if (index < 0) {
+      throw new Error(
+        'Sheet "' +
+          sheetName +
+          '" is missing the required historical column "' +
+          requiredHeader +
+          '".'
+      );
+    }
+
+    indexes[requiredHeader] = index;
+  });
+
+  return indexes;
+}
+
+/**
  * Reads the COGS sheet into a SKU-keyed cost map without changing the sheet.
  *
  * The first valid row for a SKU is used. Blank, invalid, or negative unit
@@ -1746,6 +1990,14 @@ function normalizeSku_(value) {
 }
 
 /**
+ * Normalizes the historical SL_AMB label to the live facility name.
+ */
+function normalizeFacility_(value) {
+  const facility = cleanText_(value).toUpperCase();
+  return facility === 'SL_AMB' ? 'SL_AMBIENT' : facility;
+}
+
+/**
  * Checks only the required inventory cells when deciding if a row is blank.
  */
 function inventoryRowIsBlank_(row, indexes) {
@@ -1882,6 +2134,13 @@ function isBlank_(value) {
 function normalizeDate_(value, timeZone) {
   if (value instanceof Date && !isNaN(value.getTime())) {
     return Utilities.formatDate(value, timeZone, 'yyyy-MM-dd');
+  }
+
+  if (typeof value === 'number' && isFinite(value)) {
+    const serialDate = new Date(
+      Date.UTC(1899, 11, 30) + Math.floor(value) * 86400000
+    );
+    return Utilities.formatDate(serialDate, timeZone, 'yyyy-MM-dd');
   }
 
   const text = cleanText_(value);

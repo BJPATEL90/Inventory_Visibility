@@ -62,7 +62,7 @@ export function FilterBar({
           disabled ? 'pointer-events-none opacity-60' : ''
         }`}
       >
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <label className="min-w-0">
             <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
               Date
@@ -82,35 +82,6 @@ export function FilterBar({
             options={options.facilities}
             onChange={(value) => onChange('facility', value)}
           />
-          <SelectFilter
-            label="Rack"
-            value={filters.rack}
-            placeholder="All racks"
-            options={options.racks}
-            onChange={(value) => onChange('rack', value)}
-          />
-          <SelectFilter
-            label="SKU"
-            value={filters.sku}
-            placeholder="All SKUs"
-            options={options.skus}
-            onChange={(value) => onChange('sku', value)}
-          />
-          <SelectFilter
-            label="Batch"
-            value={filters.batch}
-            placeholder="All batches"
-            options={options.batches}
-            onChange={(value) => onChange('batch', value)}
-          />
-          <SelectFilter
-            label="Remark"
-            value={filters.remark}
-            placeholder="All remarks"
-            options={options.remarks}
-            onChange={(value) => onChange('remark', value)}
-          />
-
           <div className="flex items-end">
             <button
               type="button"

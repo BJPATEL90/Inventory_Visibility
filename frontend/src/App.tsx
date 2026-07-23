@@ -241,13 +241,71 @@ function ErrorState({
   );
 }
 
+function SectionNavigation() {
+  const links = [
+    {
+      href: '#kpi-section',
+      label: '1. KPI',
+      description: 'Accuracy, cards and charts',
+      icon: Gauge
+    },
+    {
+      href: '#transactions-section',
+      label: '2. Inventory Transactions',
+      description: 'Search and CSV download',
+      icon: Database
+    },
+    {
+      href: '#masters-section',
+      label: '3. Bin & SKU Masters',
+      description: 'Read-only master data',
+      icon: Warehouse
+    }
+  ];
+
+  return (
+    <nav
+      aria-label="Dashboard sections"
+      className="border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900"
+    >
+      <div className="mx-auto grid max-w-[1600px] grid-cols-1 gap-3 px-4 py-4 sm:grid-cols-3 sm:px-6 lg:px-8">
+        {links.map((link) => {
+          const Icon = link.icon;
+          return (
+            <a
+              key={link.href}
+              href={link.href}
+              className="group flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 transition hover:border-blue-300 hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:border-slate-700 dark:bg-slate-950 dark:hover:border-blue-700 dark:hover:bg-blue-950/40"
+            >
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-100 text-blue-700 group-hover:bg-blue-700 group-hover:text-white dark:bg-blue-950 dark:text-blue-300">
+                <Icon aria-hidden="true" className="h-5 w-5" />
+              </span>
+              <span className="min-w-0">
+                <span className="block text-sm font-bold text-slate-900 dark:text-white">
+                  {link.label}
+                </span>
+                <span className="mt-0.5 block text-xs text-slate-500 dark:text-slate-400">
+                  {link.description}
+                </span>
+              </span>
+            </a>
+          );
+        })}
+      </div>
+    </nav>
+  );
+}
+
 function AccuracyBanner({
   periods
 }: {
   periods: Record<PeriodKey, PeriodData>;
 }) {
   return (
-    <section className="overflow-hidden rounded-3xl border border-blue-200 bg-gradient-to-r from-blue-950 via-blue-900 to-blue-800 p-5 shadow-lg shadow-blue-950/10 sm:p-6">
+    <section
+      id="kpi-section"
+      className="scroll-mt-80 overflow-hidden rounded-3xl border border-blue-200 bg-gradient-to-r from-blue-950 via-blue-900 to-blue-800 p-5 shadow-lg shadow-blue-950/10 sm:p-6 xl:scroll-mt-32"
+    >
       <div className="mb-5">
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-200">
           Executive KPI
@@ -284,6 +342,52 @@ function AccuracyBanner({
             </article>
           );
         })}
+      </div>
+    </section>
+  );
+}
+
+function YesterdayActivityNotice({
+  period
+}: {
+  period: PeriodData;
+}) {
+  if (period.rowCount > 0) {
+    return null;
+  }
+
+  const reason =
+    period.zeroActivity?.reason || 'Not entered in Activity_Status';
+  const remark = period.zeroActivity?.remark || '';
+
+  return (
+    <section
+      role="status"
+      className="mt-4 rounded-2xl border border-amber-300 bg-amber-50 px-5 py-4 shadow-sm dark:border-amber-800 dark:bg-amber-950/30"
+    >
+      <div className="flex items-start gap-3">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300">
+          <AlertCircle aria-hidden="true" className="h-5 w-5" />
+        </span>
+        <div>
+          <h3 className="font-bold text-amber-950 dark:text-amber-100">
+            No cycle count was performed yesterday.
+          </h3>
+          <p className="mt-1 text-sm text-amber-900 dark:text-amber-200">
+            <strong>Reason:</strong> {reason}
+          </p>
+          {remark ? (
+            <p className="mt-1 text-sm text-amber-800 dark:text-amber-300">
+              <strong>Remark:</strong> {remark}
+            </p>
+          ) : null}
+          {!period.zeroActivity?.reason ? (
+            <p className="mt-2 text-xs text-amber-700 dark:text-amber-400">
+              Add the date, reason, and optional remark in the
+              Activity_Status sheet, then refresh the dashboard.
+            </p>
+          ) : null}
+        </div>
       </div>
     </section>
   );
@@ -649,6 +753,8 @@ export default function App() {
         </div>
       ) : (
         <>
+          <SectionNavigation />
+
           <FilterBar
             filters={filters}
             options={filterOptions}
@@ -660,10 +766,14 @@ export default function App() {
             <AccuracyBanner
               periods={bannerPeriods || dashboard.periods}
             />
+            <YesterdayActivityNotice
+              period={dashboard.periods.yesterday}
+            />
 
             <div className="mb-6 mt-8 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
               <div>
                 <p className="text-sm font-semibold text-blue-700 dark:text-blue-300">
+                  Section 1 ·{' '}
                   {filters.date
                     ? `Selected date: ${filters.date}`
                     : period?.label}
@@ -774,24 +884,31 @@ export default function App() {
                   </div>
                 </section>
 
-                <section className="mt-10">
-                  <div className="mb-5">
-                    <p className="text-sm font-semibold text-blue-700 dark:text-blue-300">
-                      Section 2
-                    </p>
-                    <h2 className="mt-1 text-2xl font-bold tracking-tight">
-                      Inventory Transactions
-                    </h2>
-                    <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                      Search, sort, paginate, and download the filtered rows as CSV.
-                    </p>
-                  </div>
-                  <InventoryTable rows={filteredRows} />
-                </section>
               </>
             ) : null}
 
-            <section className="mt-10">
+            <section
+              id="transactions-section"
+              className="mt-10 scroll-mt-80 xl:scroll-mt-32"
+            >
+              <div className="mb-5">
+                <p className="text-sm font-semibold text-blue-700 dark:text-blue-300">
+                  Section 2
+                </p>
+                <h2 className="mt-1 text-2xl font-bold tracking-tight">
+                  Inventory Transactions
+                </h2>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                  Search, sort, paginate, and download the filtered rows as CSV.
+                </p>
+              </div>
+              <InventoryTable rows={filteredRows} />
+            </section>
+
+            <section
+              id="masters-section"
+              className="mt-10 scroll-mt-80 xl:scroll-mt-32"
+            >
               <div className="mb-5">
                 <p className="text-sm font-semibold text-blue-700 dark:text-blue-300">
                   Section 3

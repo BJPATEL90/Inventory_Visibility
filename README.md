@@ -1,96 +1,170 @@
 # Inventory Health Dashboard
 
-Inventory Health Dashboard is a small inventory reporting application built for
-Google Sheets, Google Apps Script, React, and GitHub Pages.
+A small inventory reporting application built with:
 
-- Google Sheets stores the inventory, configuration, activity status, and master
-  data.
-- Google Apps Script reads the sheets, calculates KPIs, refreshes cached data,
-  and sends the daily email.
-- React displays the dashboard.
-- GitHub Pages hosts the React frontend.
+- Google Sheets as the database
+- Google Apps Script as the cloud backend
+- React, TypeScript, Vite, Tailwind CSS, ApexCharts, React Query, and Lucide icons
+- GitHub Pages for frontend hosting
 
-The refresh and email jobs run in Google's cloud. After the Apps Script triggers
-are installed, they continue to run when your laptop is switched off.
+Published dashboard: [Inventory Health Dashboard](https://bjpatel90.github.io/Inventory_Visibility/)
 
-## Version 2 Phase 1
+Repository: [BJPATEL90/Inventory_Visibility](https://github.com/BJPATEL90/Inventory_Visibility)
 
-Version 2 adds read-only cost integration, value-based KPIs, and a four-period
-Inventory Accuracy banner. Inventory rows are matched to the `COGS` sheet by
-SKU. All values use Indian rupees and `Unit Rate (Excluding Gst)`.
+The Apps Script refresh and email triggers run in Google's cloud. After they are
+installed, the dashboard can refresh its cached summary and send scheduled
+emails even when the user's laptop is switched off.
 
-The executive area now separates the two accuracy measures:
+## Current release
 
-- **Inventory Accuracy — Quantity** uses absolute quantity difference divided
-  by System Quantity.
-- **Inventory Accuracy — Value / COGS** uses absolute difference value divided
-  by System Value and shows Cost Coverage.
+The current frontend contains two visible sections:
 
-NTF matching checks Rack, Shelf, and Remark without double-counting a row.
-NTF records without a valid Date are shown separately as **Undated NTF** and
-are not assigned to Last Quarter, Last Month, MTD, Yesterday, or trend charts.
+1. **KPI and charts**
+2. **Inventory Transactions**, including search, sorting, pagination, and CSV
+   download
 
-Added KPIs:
+The read-only Bin Master and SKU Master APIs are implemented, but **Section 3:
+Masters is intentionally hidden in the frontend for now**.
 
-- Total Inventory Value
-- Physical Inventory Value
-- Net Difference Value
-- Short Value
-- Excess Value
-- Cost Coverage
+The filter bar currently contains only:
+
+- Date
+- Facility
+- Clear filters
+
+The Date filter changes the detailed KPI cards, charts, and transaction table
+for the selected day. The Facility filter limits the same details and
+recalculates the four-period comparison for that facility.
+
+The two comparison ribbons always show these fixed calendar periods:
+
+- Last Quarter
+- Last Month
+- Month to Date
+- Yesterday
+
+They are comparison periods, not filter buttons.
+
+## Dashboard layout
+
+### Inventory Accuracy - Quantity
+
+The first ribbon shows quantity-based Inventory Accuracy and System Quantity
+for all four periods.
+
+### Inventory Accuracy - Value / COGS
+
+The second ribbon shows:
+
 - Value Accuracy
-- Undated NTF Quantity and Known Value
+- System Value
+- Cost Coverage
 
-Rows without a valid matching COGS rate are excluded from value totals and
-reported through Cost Coverage. Version 1 quantity calculations are unchanged.
+Value Accuracy and Cost Coverage answer different questions:
 
-The banner shows Last Quarter, Last Month, Month to Date, and Yesterday. The
-read-only `Q1-AMJ26` sheet supplies April-June 2026 history and past-date
-transactions. The application never changes that sheet.
+- **Value Accuracy** measures inventory variance for rows that have a valid
+  cost.
+- **Cost Coverage** shows what percentage of the selected rows had a valid
+  cost and could therefore be included in value calculations.
 
-## Project folders
+For example, Value Accuracy of 99.17% with Cost Coverage of 93.10% means the
+costed rows were 99.17% accurate by value, but 6.90% of the rows were not
+included in that value calculation because their cost was unavailable.
+
+Do not multiply these percentages and do not describe Value Accuracy as report
+completeness. The conservative completeness figure for value reporting is Cost
+Coverage.
+
+### Detailed KPI cards
+
+The detailed cards show:
+
+- Bin Accuracy
+- Planned Bin Count
+- Actual Bin Count
+- Cycle Count Completion
+- Inventory Accuracy
+- System Quantity and Value
+- Physical Quantity and Value
+- Net Difference Quantity and Value
+- NTF Quantity and Value
+- Undated NTF Quantity and known Value
+
+Negative quantities and values are displayed in parentheses.
+
+### Charts
+
+Only these four charts are included:
+
+- Inventory Accuracy Trend
+- Bin Accuracy Trend
+- Facility-Wise Inventory Accuracy
+- NTF Trend
+
+### Daily email
+
+The daily email reports Yesterday's detailed KPIs and also includes both
+four-period ribbons:
+
+- Quantity Accuracy for Last Quarter, Last Month, Month to Date, and Yesterday
+- Value Accuracy, System Value, and Cost Coverage for the same four periods
+
+If Yesterday has no cycle-count rows, the email uses `Activity_Status` to show
+the reason and remark.
+
+## Project structure
 
 ```text
 Inventory_Visibility/
-├── .github/
-│   └── workflows/
-│       └── deploy-pages.yml
-├── frontend/
-│   ├── src/
-│   ├── package.json
-│   ├── package-lock.json
-│   ├── vite.config.ts
-│   └── .env.example
-├── apps-script/
-│   ├── Code.gs
-│   ├── EmailTemplate.html
-│   └── appsscript.json
-└── README.md
+|-- .github/
+|   `-- workflows/
+|       `-- deploy-pages.yml
+|-- frontend/
+|   |-- src/
+|   |   |-- App.tsx
+|   |   |-- api.ts
+|   |   |-- dashboardUtils.ts
+|   |   |-- main.tsx
+|   |   |-- types.ts
+|   |   `-- components/
+|   |       |-- DashboardChart.tsx
+|   |       |-- FilterBar.tsx
+|   |       |-- InventoryTable.tsx
+|   |       |-- KpiCard.tsx
+|   |       `-- MasterTable.tsx
+|   |-- .env.example
+|   |-- package.json
+|   |-- package-lock.json
+|   `-- vite.config.ts
+|-- apps-script/
+|   |-- Code.gs
+|   |-- EmailTemplate.html
+|   `-- appsscript.json
+`-- README.md
 ```
 
-## Before you start
-
-You need:
-
-1. Access to the `Inventory_Dashboard` Google spreadsheet.
-2. A Google account that can create an Apps Script deployment and triggers.
-3. Access to the GitHub repository
-   `BJPATEL90/Inventory_Visibility`.
-4. Node.js 22 if you want to test the frontend on your computer.
-
-Local testing is optional. The final dashboard is hosted on GitHub Pages.
+There is no Node.js backend, Express server, Docker container, database server,
+or physical Combine sheet.
 
 # Part 1: Google Sheets setup
 
 ## 1. Open the spreadsheet
 
-Open the `Inventory_Dashboard` spreadsheet:
+Spreadsheet name: `Inventory_Dashboard`
 
-`https://docs.google.com/spreadsheets/d/1uB9hiqI8z46_fYxiB1syRwNNw0TM_ZV2NCYZcAVmWIk/edit`
+Spreadsheet ID:
 
-## 2. Check the five inventory sheets
+```text
+1uB9hiqI8z46_fYxiB1syRwNNw0TM_ZV2NCYZcAVmWIk
+```
 
-Check that these sheets exist:
+Open:
+
+[Inventory_Dashboard Google Sheet](https://docs.google.com/spreadsheets/d/1uB9hiqI8z46_fYxiB1syRwNNw0TM_ZV2NCYZcAVmWIk/edit)
+
+## 2. Check the five current inventory sheets
+
+The backend reads:
 
 - `SL_AMBIENT`
 - `SL_MH`
@@ -98,80 +172,126 @@ Check that these sheets exist:
 - `OWN`
 - `SL_B2C`
 
-Each source sheet should use this first row:
+Each source sheet must use this header row:
 
 ```text
 Date | Rack | Sku Code | Item Name | Shelf | Batch | Vendor Batch Number | Pack | Box | Loose | Phy | Sys | Diff | Remark
 ```
 
-The application does not change these source sheets. A missing or empty source
-sheet is skipped safely. Do not create a `Combine` sheet; the combined data is
-created only in Apps Script memory.
+Header matching ignores case, extra spaces, and periods, so `Diff` and `Diff.`
+are both accepted.
 
-## 3. Check the COGS sheet
+The backend:
 
-The sheet must be named `COGS` and use:
+- skips a missing, empty, or header-only source sheet
+- ignores completely blank inventory rows
+- ignores the first header row
+- adds Facility from the source sheet name
+- combines rows only in Apps Script memory
+- never creates or changes a physical `Combine` sheet
+- never changes the five source sheets
+
+If `Diff` is blank, the backend calculates `Phy - Sys`. If `Diff` contains a
+number, that supplied number is used for absolute difference, Short, Excess,
+bin accuracy, NTF quantity, and the related value calculations.
+
+## 3. Check the historical sheet
+
+The historical sheet is:
+
+```text
+Q1-AMJ26
+```
+
+It supplies April-June 2026 history for Last Quarter and past-date
+transactions. It is read-only.
+
+Required headers:
+
+```text
+Facility | Date | Rack | Sku's | Item Name | Shelf | Batch | Vendor Batch number | Pack | Box | Loose | Phy | Sys | Diff. | Remarks | Cogs/Unit
+```
+
+Notes:
+
+- The historical row's `Cogs/Unit` is preferred.
+- If `Cogs/Unit` is blank, the current `COGS` rate is used as a fallback.
+- `SL_AMB` is normalized to `SL_AMBIENT`.
+- The backend reads only the fixed historical sheet named `Q1-AMJ26`.
+
+## 4. Check the COGS sheet
+
+The cost sheet must be named:
+
+```text
+COGS
+```
+
+Required headers:
 
 ```text
 SKU | Product Name | Unit Rate (Excluding Gst) | GST Rate
 ```
 
-Important:
+Rules:
 
-- `SKU` is matched case-insensitively to `Sku Code` in the inventory sheets.
-- `Unit Rate (Excluding Gst)` must contain a valid zero or positive number.
-- GST is not included in Version 2 value KPIs.
-- Duplicate SKUs should be removed. The first valid cost row is used.
-- Maintain costs directly in Google Sheets; the dashboard never changes COGS.
+- Inventory `Sku Code` is matched to `COGS` `SKU` without case sensitivity.
+- `Unit Rate (Excluding Gst)` is used for all value KPIs.
+- GST is not included.
+- A zero unit rate is valid.
+- Blank, invalid, or negative rates are treated as missing costs.
+- If a SKU appears more than once, the first valid cost row is used.
+- Rows without a valid cost remain in quantity KPIs but are excluded from value
+  totals.
+- Missing costs reduce Cost Coverage.
 
-## 3A. Check the Q1 history sheet
+Maintain the COGS data directly in Google Sheets. The application does not
+change it.
 
-The historical sheet must be named `Q1-AMJ26`. It is read-only for the
-dashboard and should contain:
+## 5. Config sheet
+
+Running `setupApplication()` creates `Config` if it is missing and adds any
+missing settings without overwriting existing values.
+
+The sheet must be named `Config` and use:
 
 ```text
-Facility | Date | Rack | Sku's | Item Name | Shelf | Batch | Vendor Batch number | Pack | Box | Loose | Phy | Sys | Diff. | Remarks | Cogs/Unit | Total Value
+Setting | Value
 ```
 
-`Cogs/Unit` is used for historical values. If it is blank, the current `COGS`
-rate is used as a fallback. `SL_AMB` is displayed as `SL_AMBIENT`.
+Required settings:
 
-## 4. Create or check the Config sheet
-
-The easiest method is to run `setupApplication()` in Part 2. It creates the
-`Config` sheet when it is missing and adds any missing settings without
-overwriting existing values.
-
-The sheet must be named `Config` and must contain:
-
-| Setting | Example value |
-|---|---|
-| Dashboard Name | Inventory Health Dashboard |
-| Daily Planned Bin Count | 100 |
-| Working Days | 26 |
-| Auto Refresh Minutes | 30 |
-| Email Enabled | Yes |
-| Email To | example@email.com |
-| Email CC | |
-| Email BCC | |
-| Email Subject | Daily Inventory Health Report |
-| Email Send Hour | 9 |
-| Dashboard URL | https://bjpatel90.github.io/Inventory_Visibility/ |
-| Theme | Light |
+| Setting | Example value | Purpose |
+|---|---:|---|
+| Dashboard Name | Inventory Health Dashboard | Header and email title |
+| Daily Planned Bin Count | 100 | Daily bin plan |
+| Working Days | 26 | Monthly planning value |
+| Auto Refresh Minutes | 30 | Cloud cache refresh interval |
+| Email Enabled | No | Use `Yes` only when ready to send |
+| Email To | example@email.com | Main recipient |
+| Email CC | | Optional CC |
+| Email BCC | | Optional BCC |
+| Email Subject | Daily Inventory Health Report | Email subject prefix |
+| Email Send Hour | 9 | Hour from 0 to 23 |
+| Dashboard URL | https://bjpatel90.github.io/Inventory_Visibility/ | Email link |
+| Theme | Light | Default `Light` or `Dark` |
 
 Important:
 
-- `Email Enabled` must be `Yes` or `No`.
-- `Email To` is required when email is enabled.
-- `Email Send Hour` uses a whole number from `0` to `23`.
 - `Auto Refresh Minutes` must be `1`, `5`, `10`, `15`, `30`, or `60`.
-- The project time zone is `Asia/Kolkata`.
-- Run `createRefreshTrigger()` after changing the refresh minutes.
-- Run `createDailyEmailTrigger()` after changing the email hour.
+- The script time zone is `Asia/Kolkata`.
+- Hour `9` means Apps Script runs the email trigger sometime between 9:00 and
+  10:00, not necessarily at exactly 9:00.
+- After changing the refresh interval, run `createRefreshTrigger()` again.
+- After changing the email hour, run `createDailyEmailTrigger()` again.
+- The frontend also reads Auto Refresh Minutes and uses it as its API refetch
+  interval while the page is open.
 
-## 5. Create or check Activity_Status
+## 6. Activity_Status sheet
 
-The sheet must be named `Activity_Status` and use:
+Running `setupApplication()` also creates this sheet and its Reason dropdown.
+
+Required headers:
 
 ```text
 Date | Reason | Remark
@@ -179,11 +299,11 @@ Date | Reason | Remark
 
 Supported reasons:
 
-- `Sunday`
-- `Public Holiday`
-- `Inventory Freeze`
-- `System Issue`
-- `Other`
+- Sunday
+- Public Holiday
+- Inventory Freeze
+- System Issue
+- Other
 
 Example:
 
@@ -191,148 +311,156 @@ Example:
 2026-07-22 | Public Holiday | Warehouse closed for scheduled holiday.
 ```
 
-Enter a row only when no cycle count was performed for that date. Keep the Date
-cell as a real Google Sheets date.
+Use a real Google Sheets date. Add a status only when no cycle count was
+performed for that date.
 
-## 6. Create or check Bin_Master
+## 7. Master sheets
 
-The sheet must be named `Bin_Master` and use:
+The backend supports these read-only sheets:
+
+`Bin_Master`
 
 ```text
 Facility | Rack | Bin | Status
 ```
 
-This table is read-only in the dashboard. Maintain its rows directly in Google
-Sheets.
-
-## 7. Create or check SKU_MASTER
-
-The recommended sheet name is `SKU_Master`, using:
+`SKU_Master` or `SKU_MASTER`
 
 ```text
 SKU | Item Name | Brand | Category | Pack Size
 ```
 
-The backend also accepts the existing name `SKU_MASTER` because sheet lookup is
-case-insensitive. This table is read-only in the dashboard.
+Master sheet lookup is case-insensitive. These APIs remain available, but the
+Masters section is currently disabled in the frontend.
 
 # Part 2: Google Apps Script setup
 
-## 1. Open Apps Script
+## 1. Open the bound Apps Script project
 
 1. Open the `Inventory_Dashboard` spreadsheet.
 2. Select **Extensions > Apps Script**.
 3. Wait for the Apps Script editor to open.
 
-## 2. Add Code.gs
+## 2. Replace Code.gs
 
-1. In the left **Files** panel, select `Code.gs`.
-2. Delete the starter code.
-3. Open this project's `apps-script/Code.gs` file.
-4. Copy the complete file and paste it into the Apps Script `Code.gs` editor.
+1. In the Apps Script **Files** panel, select `Code.gs`.
+2. Delete the old content.
+3. Open [apps-script/Code.gs](apps-script/Code.gs) from this repository.
+4. Copy the complete file.
+5. Paste it into the Apps Script `Code.gs` file.
+6. Click **Save project**.
 
-## 3. Add EmailTemplate.html
+## 3. Add or replace EmailTemplate.html
 
-1. In the left **Files** panel, click **Add a file (+)**.
+If the file does not exist:
+
+1. Click **Add a file (+)** in the Apps Script Files panel.
 2. Select **HTML**.
-3. Enter the name `EmailTemplate`.
-4. Open this project's `apps-script/EmailTemplate.html` file.
-5. Copy the complete file into the new Apps Script HTML file.
+3. Enter `EmailTemplate`.
 
-The editor displays the file as `EmailTemplate.html`.
+Then:
 
-## 4. Check the project settings
+1. Open [apps-script/EmailTemplate.html](apps-script/EmailTemplate.html).
+2. Copy the complete file.
+3. Paste it into `EmailTemplate.html` in Apps Script.
+4. Click **Save project**.
 
-1. Click **Project Settings** in the left panel.
-2. Set the time zone to **(GMT+05:30) India Standard Time – Kolkata** if it is
-   not already selected.
-3. Click **Save project**.
+## 4. Check the time zone
 
-The supplied `appsscript.json` uses `Asia/Kolkata` and the V8 runtime.
+1. In Apps Script, open **Project Settings**.
+2. Set the time zone to **(GMT+05:30) India Standard Time - Kolkata**.
+3. Save the project.
+
+The supplied [apps-script/appsscript.json](apps-script/appsscript.json) uses
+`Asia/Kolkata` and the V8 runtime.
 
 ## 5. Run the one-time setup
 
-1. At the top of the editor, open the function dropdown.
-2. Select `setupApplication`.
-3. Click **Run**.
-4. When Google asks for authorization, click **Review permissions**.
-5. Select the Google account that owns or manages the dashboard.
-6. Review the requested permissions and click **Allow**.
+1. Return to **Editor**.
+2. Open the function dropdown at the top.
+3. Select `setupApplication`.
+4. Click **Run**.
+5. Click **Review permissions** when requested.
+6. Select the Google account that manages the spreadsheet.
+7. Review the permissions and click **Allow**.
 
 Expected result:
 
-- `Config` and `Activity_Status` exist.
-- Missing settings are appended without changing the five source sheets.
-- A refresh trigger is created.
-- A daily email trigger is created.
-- The dashboard cache is refreshed.
+- `Config` exists and contains every required setting.
+- `Activity_Status` exists with the correct headers and Reason dropdown.
+- One refresh trigger exists.
+- One daily email trigger exists.
+- The dashboard cache is calculated.
+- None of the inventory, historical, COGS, or master sheets are changed.
 
-To see the result, click **Execution log** at the bottom of the editor.
+Open **Execution log** to review the result.
 
-## 6. Test the backend
+## 6. Run backend tests
 
-Run these functions one at a time from the function dropdown:
+Run these functions one at a time:
 
-1. `testKpiCalculations()` checks the KPI formulas using safe sample data.
-2. `testPhase1()` reads the real source sheets and prints the combined counts,
-   skipped sheets, periods, KPIs, and last refresh time.
-3. `testMasters()` prints the Bin Master and SKU Master row counts and samples.
-4. `testQuarterData()` checks the read-only `Q1-AMJ26` rows, historical date
-   range, and all four reporting periods.
-5. `testEmailPreview()` creates the email HTML and saves a temporary preview
-   file in Google Drive. It does not send an email.
+| Function | What it checks | Changes data? |
+|---|---|---|
+| `testKpiCalculations()` | Quantity, value, bin, NTF, and coverage formulas using sample rows | No |
+| `testPhase1()` | Current source rows, skipped sheets, periods, and KPIs | No |
+| `testValueKpis()` | COGS matching, coverage, and missing-cost SKUs | No |
+| `testQuarterData()` | `Q1-AMJ26`, historical date range, and four periods | No |
+| `testMasters()` | Bin and SKU master APIs | No |
+| `testEmailPreview()` | Email model and HTML rendering without sending | No |
 
 For each test:
 
 1. Select the function.
 2. Click **Run**.
 3. Open **Execution log**.
-4. Confirm that the output does not contain an error.
+4. Confirm `"passed": true` where provided and review all counts.
 
-To inspect past runs, click **Executions** in the left panel.
+`testEmailPreview()` does not send an email or create a Drive file. It prints
+the preview summary and HTML length in the log.
 
-## 7. Deploy the Apps Script Web App
+## 7. Deploy the Web App
 
-1. In the Apps Script editor, click **Deploy > New deployment**.
-2. Next to **Select type**, click the gear icon.
+For the first deployment:
+
+1. Click **Deploy > New deployment**.
+2. Click the gear next to **Select type**.
 3. Select **Web app**.
-4. Enter a description such as `Inventory Dashboard API v1`.
-5. For **Execute as**, select **Me**.
-6. Choose the access setting that is appropriate for your data.
+4. Enter a description.
+5. Set **Execute as** to **Me**.
+6. Select the access setting suitable for the dashboard.
 7. Click **Deploy**.
-8. Approve permissions if Google asks again.
-9. Copy the Web App URL ending in `/exec`.
+8. Approve permissions if requested.
+9. Copy the URL ending in `/exec`.
 
-### Important access note
+### Access and privacy warning
 
-The React site calls the Apps Script URL directly from GitHub Pages. For this
-simple first version, the deployment normally needs the access option labelled
-**Anyone** so the browser can receive JSON without a Google sign-in redirect.
-This means anyone who obtains the Apps Script URL can read the data returned by
-the API.
+The React frontend is a static GitHub Pages site and calls Apps Script directly
+from the user's browser. In this simple architecture, the Web App normally
+needs the access setting **Anyone** to return JSON without a Google sign-in
+redirect.
 
-Do not treat the Web App URL or the GitHub secret as authentication. Vite places
-the URL in the published browser files during the build.
+That means anyone who obtains the Web App URL can read the data exposed by its
+GET endpoints. The Web App URL and the GitHub Actions secret are not a secure
+login system because Vite places the URL inside the published browser files.
 
-If the inventory data must be restricted to named users or only your Google
-Workspace domain, stop before publishing. A static GitHub Pages site plus a
-direct Apps Script request is not a complete secure login system. Controlled
-user authentication should be added as a future security enhancement before
-exposing sensitive data.
+If the inventory data must be limited to named users or a Google Workspace
+domain, do not publish this version as a public Web App. Add proper
+authentication in a later security phase.
 
-## 8. Test the Web App URL
+## 8. Test the API
 
-Paste each URL into a browser, replacing `YOUR_WEB_APP_URL`:
+Replace `YOUR_WEB_APP_URL` with the copied `/exec` URL:
 
 ```text
 YOUR_WEB_APP_URL?action=config
 YOUR_WEB_APP_URL?action=dashboard
 YOUR_WEB_APP_URL?action=transactions
+YOUR_WEB_APP_URL?action=activityStatus&date=2026-07-23
 YOUR_WEB_APP_URL?action=binMaster
 YOUR_WEB_APP_URL?action=skuMaster
 ```
 
-Expected result:
+A successful response has this structure:
 
 ```json
 {
@@ -342,41 +470,45 @@ Expected result:
 }
 ```
 
-The exact `data` value changes by action. If the browser shows an authorization
-page or HTML instead of JSON, review the Web App access setting.
+The `data` shape depends on the action.
 
-When `Code.gs` changes later:
+If the browser shows HTML, a Google login page, or an authorization error
+instead of JSON, check the deployment access setting and confirm the URL ends
+in `/exec`.
+
+## 9. Publish later Apps Script changes
+
+Saving `Code.gs` does not update an existing Web App deployment.
+
+After every backend or email change:
 
 1. Click **Deploy > Manage deployments**.
-2. Select the Web App deployment.
+2. Select the existing Web App.
 3. Click **Edit**.
-4. Under **Version**, choose **New version**.
+4. Set **Version** to **New version**.
 5. Click **Deploy**.
+6. Keep the same `/exec` URL.
+7. Test `?action=dashboard` again.
 
-Keep the same `/exec` URL when updating the existing deployment.
+Apps Script deployment is separate from GitHub Pages deployment.
 
 # Part 3: Frontend setup
 
-## 1. Add the files to GitHub
+## 1. Requirements
 
-The repository should contain the complete `frontend`, `apps-script`,
-`.github/workflows`, and `README.md` files from this project.
+For optional local testing, install Node.js 22.
 
-Do not upload:
+The published dashboard does not need a local development server.
 
-- `frontend/node_modules`
-- `frontend/dist`
-- `frontend/.env.local`
+## 2. Configure the local Apps Script URL
 
-They are already excluded by `frontend/.gitignore`.
+Open a terminal in the repository and copy:
 
-## 2. Add the Apps Script URL for local testing
+```powershell
+Copy-Item frontend\.env.example frontend\.env.local
+```
 
-Inside the `frontend` folder:
-
-1. Copy `.env.example`.
-2. Rename the copy to `.env.local`.
-3. Replace the example value with the `/exec` Web App URL:
+Open `frontend/.env.local` and set:
 
 ```text
 VITE_APPS_SCRIPT_URL=https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec
@@ -386,22 +518,19 @@ Do not add quotation marks. Do not commit `.env.local`.
 
 ## 3. Run locally
 
-Open a terminal in the `frontend` folder and run:
-
 ```powershell
+cd frontend
 npm install
 npm run dev
 ```
 
-Open the local address shown in the terminal, normally
-`http://localhost:5173/Inventory_Visibility/`.
+Open the address shown by Vite. Local testing is temporary; the production
+dashboard remains on GitHub Pages after the terminal and laptop are switched
+off.
 
-Local mode is only for checking changes. You may close it after testing; the
-published dashboard and Google triggers do not depend on it.
+## 4. Verify a production build
 
-## 4. Check a production build
-
-From the `frontend` folder, run:
+From the `frontend` folder:
 
 ```powershell
 npm run build
@@ -411,75 +540,49 @@ Expected result:
 
 - TypeScript completes without errors.
 - Vite creates `frontend/dist`.
-- The build uses `/Inventory_Visibility/` as its GitHub Pages base path.
+- Assets use `/Inventory_Visibility/` as the GitHub Pages base path.
 
 # Part 4: GitHub Pages deployment
 
-## 1. Open the repository
+## 1. Add the Apps Script URL as a repository secret
 
-Open:
-
-`https://github.com/BJPATEL90/Inventory_Visibility`
-
-Make sure the default branch is named `main`.
-
-## 2. Add the Apps Script URL as a GitHub secret
-
-1. Open the repository.
+1. Open [the GitHub repository](https://github.com/BJPATEL90/Inventory_Visibility).
 2. Select **Settings**.
-3. In the left menu, select **Secrets and variables > Actions**.
-4. Select the **Secrets** tab.
+3. Select **Secrets and variables > Actions**.
+4. Open the **Secrets** tab.
 5. Click **New repository secret**.
-6. For **Name**, enter exactly:
+6. Enter this exact name:
 
 ```text
 VITE_APPS_SCRIPT_URL
 ```
 
-7. For **Secret**, paste the Apps Script Web App URL ending in `/exec`.
+7. Paste the Apps Script `/exec` URL as the value.
 8. Click **Add secret**.
 
-The workflow stops with a clear error if this secret is missing.
+The workflow deliberately fails at **Check Apps Script URL** if this secret is
+missing.
 
-## 3. Enable GitHub Pages
+## 2. Enable GitHub Pages
 
-1. In the repository, select **Settings**.
-2. In **Code and automation**, select **Pages**.
-3. Under **Build and deployment**, set **Source** to **GitHub Actions**.
+1. Open **Settings > Pages**.
+2. Under **Build and deployment**, set **Source** to **GitHub Actions**.
 
-## 4. Push the project
+## 3. Deploy
 
-Push all project files to the `main` branch. The file
-`.github/workflows/deploy-pages.yml` starts the deployment automatically.
+Every push to `main` starts
+[.github/workflows/deploy-pages.yml](.github/workflows/deploy-pages.yml).
 
-If using Git from the project folder for the first time:
+The workflow:
 
-```powershell
-git init
-git branch -M main
-git add .
-git commit -m "Build inventory health dashboard"
-git remote add origin https://github.com/BJPATEL90/Inventory_Visibility.git
-git push -u origin main
-```
+1. Downloads the repository.
+2. Uses Node.js 22.
+3. Checks `VITE_APPS_SCRIPT_URL`.
+4. Runs `npm ci` in `frontend`.
+5. Runs `npm run build`.
+6. Publishes `frontend/dist` to GitHub Pages.
 
-If the GitHub repository already contains files, clone it first or connect and
-merge it carefully instead of overwriting its history.
-
-## 5. Watch the deployment
-
-1. Open the repository's **Actions** tab.
-2. Open **Deploy Inventory Dashboard to GitHub Pages**.
-3. Wait for both jobs to turn green:
-   - **Build React frontend**
-   - **Publish GitHub Pages site**
-4. Open **Settings > Pages** and click **Visit site**.
-
-Final dashboard address:
-
-`https://bjpatel90.github.io/Inventory_Visibility/`
-
-The workflow also has a manual option:
+To run it manually:
 
 1. Open **Actions**.
 2. Select **Deploy Inventory Dashboard to GitHub Pages**.
@@ -487,190 +590,311 @@ The workflow also has a manual option:
 4. Select `main`.
 5. Click **Run workflow** again.
 
-Every later push to `main` builds and republishes only the React frontend.
-Apps Script is still deployed separately through the Apps Script editor.
+Wait for both jobs to turn green:
 
-# Part 5: Testing checklist
+- Build React frontend
+- Publish GitHub Pages site
 
-## A. KPI calculations
+Then open:
 
-- [ ] Run `testKpiCalculations()` and confirm it completes without errors.
-- [ ] Run `testValueKpis()` and review Cost Coverage and missing-cost SKUs.
-- [ ] Run `testQuarterData()` and confirm the historical row count, first date,
-  last date, and Last Quarter KPI values.
-- [ ] Run `testPhase1()` and compare the combined row count with the source
-  sheets.
-- [ ] Confirm System Quantity is the sum of `Sys`.
-- [ ] Confirm Physical Quantity is the sum of `Phy`.
-- [ ] Confirm Net Difference equals Physical Quantity minus System Quantity.
-- [ ] Confirm Short Quantity uses the absolute total of negative differences.
-- [ ] Confirm Excess Quantity totals positive differences.
-- [ ] Confirm Total Inventory Value equals `Sys × Unit Rate` for matched rows.
-- [ ] Confirm Physical Inventory Value equals `Phy × Unit Rate` for matched
-  rows.
-- [ ] Confirm Net Difference Value equals Physical Value minus System Value.
-- [ ] Confirm Short Value uses negative `Diff × Unit Rate`.
-- [ ] Confirm Excess Value uses positive `Diff × Unit Rate`.
-- [ ] Confirm Cost Coverage equals matched rows divided by selected rows.
-- [ ] Confirm missing-cost rows show `Missing cost` in the transaction table.
-- [ ] Confirm changing filters updates all quantity and value KPIs together.
-- [ ] Confirm Actual Bin Count counts unique Facility + Rack + Shelf values.
-- [ ] Confirm Yesterday planned bins equals Daily Planned Bin Count.
-- [ ] Confirm Month to Date planned bins equals Daily Planned Bin Count
-  multiplied by completed working days.
-- [ ] Confirm `NTF` matching is case-insensitive.
-- [ ] Confirm NTF is detected from Rack, Shelf, or Remark without
-  double-counting.
-- [ ] Confirm Undated NTF appears separately and does not change dated KPIs.
-- [ ] Confirm accuracy colours: below 96 red, 96 to below 99 yellow, and 99 or
-  above green.
+[https://bjpatel90.github.io/Inventory_Visibility/](https://bjpatel90.github.io/Inventory_Visibility/)
 
-## B. Filters and states
+# KPI calculation reference
 
-- [ ] Confirm the Inventory Accuracy banner shows Last Quarter, Last Month,
-  Month to Date, and Yesterday.
-- [ ] Confirm the quantity ribbon no longer contains System Value.
-- [ ] Confirm the Value / COGS ribbon shows Value Accuracy, System Value, and
-  Cost Coverage for all four periods.
-- [ ] Test Date, Facility, Rack, SKU, Batch, and Remark filters.
-- [ ] Select a date from `Q1-AMJ26` and confirm its transaction rows appear.
-- [ ] Confirm KPI cards, all charts, and the transaction table change together.
-- [ ] Click **Clear Filters** and confirm all filters reset.
-- [ ] Confirm the loading message appears during a refresh.
-- [ ] Select a period with no data and confirm the empty or zero-activity
-  message is clear.
-- [ ] Temporarily use an invalid Apps Script URL locally and confirm the error
-  message is readable, then restore the correct URL.
-- [ ] Check the Last Refresh Time.
-- [ ] Test light mode and dark mode.
-- [ ] Open the dashboard on a phone-sized screen.
+All percentages are rounded to two decimal places.
 
-## C. Charts
+## Quantity Inventory Accuracy
 
-- [ ] Confirm only these four charts are shown:
-  - Inventory Accuracy Trend
-  - Bin Accuracy Trend
-  - Facility-Wise Inventory Accuracy
-  - NTF Trend
-- [ ] Confirm chart values change when filters change.
-- [ ] Confirm chart tooltips and labels are readable in light and dark modes.
+```text
+100 - (Total Absolute Difference / Total System Quantity x 100)
+```
 
-## D. Inventory transactions
+`Total Absolute Difference` is the sum of `ABS(Diff)` for all selected rows.
+If System Quantity is zero, the result is zero.
 
-- [ ] Use Global Search with a SKU, item, rack, batch, and remark.
-- [ ] Click several column headings and confirm sorting changes direction.
-- [ ] Test the page buttons.
-- [ ] Test each page-size option.
-- [ ] Click **Export CSV**.
-- [ ] Open the CSV and confirm it contains the currently filtered and searched
-  transactions.
+## Value Inventory Accuracy
 
-## E. Masters
+```text
+Absolute Difference Value = Short Value + Excess Value
 
-- [ ] Run `testMasters()` in Apps Script.
-- [ ] Confirm Bin Master is read-only.
-- [ ] Confirm SKU Master is read-only.
-- [ ] Test search, sorting, and pagination in both master tables.
-- [ ] Confirm an empty Bin Master shows an empty-data message without breaking
-  the SKU Master.
+Value Accuracy % =
+100 - (Absolute Difference Value / System Value x 100)
+```
 
-## F. Email report
+Only rows with a valid unit cost are included. If System Value is zero, the
+result is zero.
 
-- [ ] Set `Email To` in the Config sheet.
-- [ ] Keep `Email Enabled` as `No` while previewing.
-- [ ] Run `testEmailPreview()` and open the temporary HTML file created in
-  Google Drive.
-- [ ] Confirm title, date, KPI values, colours, generation time, and dashboard
-  link are correct.
-- [ ] Set `Email Enabled` to `Yes`.
-- [ ] Run `sendInventoryEmail()` once manually.
-- [ ] Confirm the To, CC, BCC, and subject values come from Config.
-- [ ] Open the email in Gmail and Outlook if both are available.
-- [ ] Return `Email Enabled` to the intended final value.
+## Cost Coverage
 
-## G. Triggers and laptop-off operation
+```text
+Cost Coverage % = Costed Row Count / Selected Row Count x 100
+```
 
-- [ ] Run `createRefreshTrigger()` after finalizing Auto Refresh Minutes.
-- [ ] Run `createDailyEmailTrigger()` after finalizing Email Send Hour.
-- [ ] In Apps Script, open **Triggers** from the left panel.
-- [ ] Confirm one trigger calls `refreshDashboardCache`.
-- [ ] Confirm one trigger calls `sendInventoryEmail`.
-- [ ] In Apps Script, open **Executions** and confirm scheduled runs complete.
-- [ ] Switch off the laptop for longer than the refresh interval.
-- [ ] Later, check **Executions** and confirm the trigger ran while the laptop
-  was off.
+This is row-based coverage, not quantity-based or value-based coverage.
 
-Google may run a daily time trigger at a consistent time within the selected
-hour rather than at exactly the first minute of that hour.
+## Bin Accuracy
 
-## H. Zero-activity reason
+One bin is a unique:
 
-- [ ] Choose a date with no inventory rows.
-- [ ] Add that date, a supported reason, and a remark to `Activity_Status`.
+```text
+Facility + Rack + Shelf
+```
+
+The backend sums `Diff` for every row in that bin. The bin is accurate when its
+total difference is zero.
+
+```text
+Bin Accuracy % = Accurate Bin Count / Actual Bin Count x 100
+```
+
+Rows where both Rack and Shelf are blank do not form a bin.
+
+## System and Physical quantities
+
+```text
+System Quantity = Sum of Sys
+Physical Quantity = Sum of Phy
+```
+
+## Net Difference
+
+```text
+Net Difference = Physical Quantity - System Quantity
+```
+
+Net Difference deliberately uses `Phy - Sys` totals. Short and Excess use the
+source `Diff` values. Therefore, if a source row's `Diff` does not equal
+`Phy - Sys`, then `Excess - Short` will not equal Net Difference. This is a
+source-data quality issue, not a hidden row.
+
+## Short and Excess
+
+```text
+Short Quantity = Sum of ABS(Diff) where Diff is negative
+Excess Quantity = Sum of Diff where Diff is positive
+```
+
+## Values
+
+For rows with a valid unit cost:
+
+```text
+System Value = Sys x Unit Cost
+Physical Value = Phy x Unit Cost
+Net Difference Value = Physical Value - System Value
+Short Value = ABS(Diff) x Unit Cost where Diff is negative
+Excess Value = Diff x Unit Cost where Diff is positive
+```
+
+All values use INR and exclude GST.
+
+## Actual and Planned Bin Count
+
+```text
+Actual Bin Count = Unique Facility + Rack + Shelf combinations
+```
+
+Planned Bin Count:
+
+- Yesterday: Daily Planned Bin Count
+- Last Month: Daily Planned Bin Count x Working Days
+- Last Quarter: Daily Planned Bin Count x Working Days x 3
+- Month to Date: Daily Planned Bin Count x completed Monday-Saturday days,
+  capped at the configured Working Days
+- A selected custom date in the frontend: Daily Planned Bin Count
+
+## Cycle Count Completion
+
+```text
+Actual Bin Count / Planned Bin Count x 100
+```
+
+The result can be above 100% when actual counted bins exceed the plan.
+
+## NTF
+
+A row is NTF when `Rack`, `Shelf`, or `Remark` contains `NTF`,
+case-insensitively. One row is counted once even if NTF appears in more than one
+field.
+
+```text
+NTF Count = Number of matching rows
+NTF Quantity = Sum of ABS(Diff) for matching rows
+NTF Value = Sum of ABS(Diff) x Unit Cost for costed matching rows
+```
+
+NTF rows without a valid Date are reported separately as **Undated NTF**. They
+do not affect Last Quarter, Last Month, Month to Date, Yesterday, accuracy,
+completion, or trend calculations.
+
+Other rows with a blank or invalid Date remain available in the transaction API
+but cannot be assigned to a dated KPI period. Correct their Date in the source
+sheet if they should appear in a daily or period report.
+
+## Accuracy colours
+
+The same rule is reused for quantity accuracy, value accuracy, and bin
+accuracy:
+
+| Result | Colour |
+|---:|---|
+| Below 96% | Red |
+| 96% to below 99% | Yellow |
+| 99% and above | Green |
+
+# Testing checklist
+
+## Google Sheets and backend
+
+- [ ] Confirm the five current source sheets have the required headers.
+- [ ] Confirm `Q1-AMJ26` has the required historical headers.
+- [ ] Confirm `COGS` has the required cost headers.
+- [ ] Run `testKpiCalculations()` and confirm it passes.
+- [ ] Run `testPhase1()` and review current row counts and skipped sheets.
+- [ ] Run `testValueKpis()` and review cost coverage and missing SKUs.
+- [ ] Run `testQuarterData()` and review the historical date range.
+- [ ] Run `testEmailPreview()` and review both four-period summaries.
+- [ ] Test every API URL directly in a browser.
+
+## Frontend
+
+- [ ] Confirm only Date and Facility appear in the filter bar.
+- [ ] Select a current date and confirm KPI cards, charts, and transactions
+  change.
+- [ ] Select a date from `Q1-AMJ26` and confirm historical rows appear.
+- [ ] Select a Facility and confirm the detailed results and period ribbons
+  change.
+- [ ] Click **Clear filters** and confirm Month-to-Date details return.
+- [ ] Confirm the Quantity Accuracy ribbon has four periods.
+- [ ] Confirm the Value/COGS ribbon has four periods, System Value, and Cost
+  Coverage.
+- [ ] Confirm the Masters section is not visible.
+- [ ] Test transaction global search.
+- [ ] Test column sorting.
+- [ ] Test pagination and page size.
+- [ ] Export CSV and confirm it contains the filtered and searched rows.
+- [ ] Confirm the four required charts are visible.
+- [ ] Test light and dark mode.
+- [ ] Test on desktop and a phone-sized screen.
+
+## Zero activity
+
+- [ ] Choose a date with no cycle-count rows.
+- [ ] Add the date, supported reason, and remark to `Activity_Status`.
 - [ ] Refresh the dashboard and select the same date.
-- [ ] Confirm the dashboard shows `No cycle count was performed`, the reason,
-  and the remark.
-- [ ] Run `testEmailPreview()` or send the report for a matching no-activity
-  date and confirm the same reason and remark appear.
+- [ ] Confirm the reason and remark appear.
+- [ ] Confirm Yesterday's no-activity notice appears below the ribbons when
+  Yesterday has no rows.
+- [ ] Run `testEmailPreview()` and confirm the same Yesterday reason appears.
 
-## I. Published dashboard
+## Email and triggers
 
-- [ ] Confirm the GitHub Actions workflow is green.
-- [ ] Open `https://bjpatel90.github.io/Inventory_Visibility/`.
-- [ ] Refresh the page and confirm it does not show a 404 error.
-- [ ] Confirm browser requests return JSON, not a Google sign-in page.
-- [ ] Confirm the dashboard still works after the local development server is
-  stopped.
+- [ ] Keep `Email Enabled` as `No` during preview testing.
+- [ ] Set `Email To` before enabling email.
+- [ ] Run `sendInventoryEmail()` manually once after enabling email.
+- [ ] Check the email in Gmail and Outlook if both are used.
+- [ ] Confirm the email contains Quantity Accuracy and Value Accuracy ribbons.
+- [ ] Run `createRefreshTrigger()` after finalizing the refresh interval.
+- [ ] Run `createDailyEmailTrigger()` after finalizing the send hour.
+- [ ] Open **Triggers** and confirm one trigger for
+  `refreshDashboardCache` and one for `sendInventoryEmail`.
+- [ ] Open **Executions** later and confirm triggers ran while the laptop was
+  switched off.
+
+## Deployment
+
+- [ ] Confirm the latest Apps Script code was saved and deployed as a new Web
+  App version.
+- [ ] Confirm the Web App `/exec` URL returns JSON.
+- [ ] Confirm the GitHub secret `VITE_APPS_SCRIPT_URL` exists.
+- [ ] Confirm the latest GitHub Actions run is green.
+- [ ] Open the published dashboard after stopping the local development server.
+- [ ] Refresh the published page and confirm it does not show a 404.
 
 # Common errors
 
-## `VITE_APPS_SCRIPT_URL is missing`
+## GitHub Actions says `VITE_APPS_SCRIPT_URL is missing`
 
-For local use, create `frontend/.env.local`. For GitHub Pages, add the repository
-secret named exactly `VITE_APPS_SCRIPT_URL`, then rerun the workflow.
+Add the repository secret under:
+
+**Settings > Secrets and variables > Actions > New repository secret**
+
+Use the exact name `VITE_APPS_SCRIPT_URL`, then rerun the workflow.
 
 ## Apps Script URL returns HTML instead of JSON
 
-Confirm that:
+Check:
 
-- The URL ends in `/exec`, not `/dev`.
-- The latest Apps Script version is deployed.
-- The Web App access setting permits the browser request.
-- The URL works directly with `?action=config`.
+- the URL ends in `/exec`, not `/dev`
+- the latest Apps Script version is deployed
+- the Web App access setting permits the browser request
+- `YOUR_WEB_APP_URL?action=config` works directly
 
-## GitHub Actions build fails during `npm ci`
+## Frontend still shows old backend results
 
-Confirm that both `frontend/package.json` and `frontend/package-lock.json` were
-committed and were not edited manually.
+Saving Apps Script is not enough. Use:
 
-## GitHub Pages shows a blank page or missing files
+**Deploy > Manage deployments > Edit > New version > Deploy**
 
-Confirm:
+Then run `refreshDashboardCache()` or wait for the refresh trigger.
 
-- The repository name is exactly `Inventory_Visibility`.
-- `frontend/vite.config.ts` contains
-  `base: '/Inventory_Visibility/'`.
-- **Settings > Pages > Source** is set to **GitHub Actions**.
-- The latest workflow run completed successfully.
+## Value Accuracy is high but Cost Coverage is lower
 
-## Trigger did not run at the exact minute
+This is possible and expected. Value Accuracy measures only rows with a valid
+cost. Cost Coverage tells how much of the selected row population was included.
+Add missing SKU rates to `COGS`, redeploy only if code changed, and refresh the
+cache.
 
-Apps Script time-driven triggers can run within the selected time window. Check
-**Executions** for the actual start time and any error message.
+## Net Difference does not equal Excess minus Short
+
+Check whether every source `Diff` equals `Phy - Sys`. Net Difference uses
+Physical minus System totals, while Short and Excess use the supplied `Diff`.
+
+## A row does not appear in a dated period
+
+Check:
+
+- Date is a real Google Sheets date or a valid recognizable date
+- the row is not completely blank
+- the selected period includes the date
+- undated NTF is intentionally shown separately
+- the source or historical sheet has every required header
+
+## GitHub Pages is blank or has missing assets
+
+Check:
+
+- the repository name is exactly `Inventory_Visibility`
+- `frontend/vite.config.ts` contains `base: '/Inventory_Visibility/'`
+- **Settings > Pages > Source** is **GitHub Actions**
+- the latest Actions workflow completed successfully
 
 ## Email was not sent
 
-Confirm:
+Check:
 
-- `Email Enabled` is `Yes`.
-- `Email To` contains a valid address.
-- `sendInventoryEmail()` succeeds when run manually.
-- The daily trigger exists.
-- The Apps Script account has not exceeded its email quota.
+- `Email Enabled` is `Yes`
+- `Email To` is not blank
+- `sendInventoryEmail()` works manually
+- the daily trigger exists
+- Apps Script **Executions** has no error
+- the sending account has remaining email quota
 
-# Current scope
+# Current scope and known limitations
 
-This release intentionally does not include a Node/Express backend, Docker,
-editable master forms, role-management screens, Excel/PDF export, GST-inclusive
-value KPIs, or a materialized Combine sheet. Version 2 Phase 1 adds only the
-approved COGS-based value KPIs while keeping the original small architecture.
+This release intentionally does not include:
+
+- Node.js or Express backend
+- Docker
+- database server
+- complex authentication or user roles
+- editable master forms
+- visible Masters section
+- Excel or PDF export
+- GST-inclusive value KPIs
+- service accounts
+- a physical Combine sheet
+- CI/CD deployment for Apps Script
+
+The frontend is deployed automatically by GitHub Actions. Apps Script must
+still be copied and deployed separately through the Apps Script editor.

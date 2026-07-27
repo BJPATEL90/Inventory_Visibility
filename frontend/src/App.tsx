@@ -35,6 +35,7 @@ import {
 import {
   calculateCharts,
   calculateFilteredKpis,
+  calculateNtfSummary,
   EMPTY_FILTERS,
   filterTransactions,
   getFilterOptions,
@@ -46,6 +47,7 @@ import type {
   BinMasterRow,
   DashboardFilters,
   Kpis,
+  NtfSummary,
   PeriodData,
   PeriodKey,
   SkuMasterRow
@@ -310,7 +312,7 @@ function SectionNavigation() {
   );
 }
 
-function AccuracyBanner({
+function QuantityAccuracyBanner({
   periods
 }: {
   periods: Record<PeriodKey, PeriodData>;
@@ -325,10 +327,10 @@ function AccuracyBanner({
           Executive KPI
         </p>
         <h2 className="mt-1 text-2xl font-bold text-white">
-          Inventory Accuracy
+          Inventory Accuracy — Quantity
         </h2>
         <p className="mt-1 text-xs text-blue-200">
-          Qty is System Quantity; Value uses COGS excluding GST.
+          Accuracy uses the total absolute quantity difference.
         </p>
       </div>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -349,23 +351,90 @@ function AccuracyBanner({
               >
                 {formatPercent(period.kpis.inventoryAccuracy)}
               </p>
-              <div className="mt-3 space-y-1.5 border-t border-slate-200 pt-3 text-xs">
+              <div className="mt-3 border-t border-slate-200 pt-3 text-xs">
                 <p className="flex items-center justify-between gap-2 text-slate-600">
-                  <span className="font-medium">Qty</span>
+                  <span className="font-medium">System Qty</span>
                   <strong className="text-right text-slate-900">
                     {formatNumber(period.kpis.systemQuantity)}
-                  </strong>
-                </p>
-                <p className="flex items-center justify-between gap-2 text-slate-600">
-                  <span className="font-medium">Value</span>
-                  <strong className="text-right text-slate-900">
-                    {formatCurrency(period.kpis.systemValue)}
                   </strong>
                 </p>
               </div>
               <p className="mt-3 text-xs text-slate-500">
                 {period.startDate} to {period.endDate}
               </p>
+              <span
+                className="mt-3 block h-1.5 rounded-full"
+                style={{ backgroundColor: style.indicator }}
+              />
+            </article>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function ValueAccuracyBanner({
+  periods
+}: {
+  periods: Record<PeriodKey, PeriodData>;
+}) {
+  return (
+    <section className="mt-4 overflow-hidden rounded-3xl border border-emerald-200 bg-emerald-50/70 p-5 shadow-sm dark:border-emerald-900 dark:bg-emerald-950/20 sm:p-6">
+      <div className="mb-4">
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700 dark:text-emerald-300">
+          COGS KPI
+        </p>
+        <h2 className="mt-1 text-xl font-bold text-slate-950 dark:text-white">
+          Inventory Accuracy — Value / COGS
+        </h2>
+        <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">
+          Uses costed rows and COGS excluding GST. Coverage shows the share of
+          rows with a valid cost.
+        </p>
+      </div>
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {PERIOD_KEYS.map((periodKey) => {
+          const period = periods[periodKey];
+          const absoluteDifferenceValue =
+            period.kpis.shortValue + period.kpis.excessValue;
+          const valueAccuracy = Number.isFinite(period.kpis.valueAccuracy)
+            ? period.kpis.valueAccuracy
+            : period.kpis.systemValue === 0
+              ? 0
+              : 100 -
+                (absoluteDifferenceValue / period.kpis.systemValue) * 100;
+          const style =
+            period.kpis.valueAccuracyStyle ||
+            getAccuracyStyle(valueAccuracy);
+          return (
+            <article
+              key={periodKey}
+              className="rounded-2xl border border-emerald-100 bg-white p-4 shadow-sm dark:border-emerald-900"
+            >
+              <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
+                {period.label}
+              </p>
+              <p
+                className="mt-2 text-2xl font-black tracking-tight"
+                style={{ color: style.text }}
+              >
+                {formatPercent(valueAccuracy)}
+              </p>
+              <div className="mt-3 space-y-1.5 border-t border-slate-200 pt-3 text-xs">
+                <p className="flex items-center justify-between gap-2 text-slate-600">
+                  <span className="font-medium">System Value</span>
+                  <strong className="text-right text-slate-900">
+                    {formatCurrency(period.kpis.systemValue)}
+                  </strong>
+                </p>
+                <p className="flex items-center justify-between gap-2 text-slate-600">
+                  <span className="font-medium">Cost Coverage</span>
+                  <strong className="text-right text-slate-900">
+                    {formatPercent(period.kpis.costCoverage)}
+                  </strong>
+                </p>
+              </div>
               <span
                 className="mt-3 block h-1.5 rounded-full"
                 style={{ backgroundColor: style.indicator }}
@@ -424,7 +493,13 @@ function YesterdayActivityNotice({
   );
 }
 
-function KpiGrid({ kpis }: { kpis: Kpis }) {
+function KpiGrid({
+  kpis,
+  undatedNtf
+}: {
+  kpis: Kpis;
+  undatedNtf: NtfSummary;
+}) {
   const completionStyle = getAccuracyStyle(
     kpis.cycleCountCompletion
   );
@@ -502,9 +577,24 @@ function KpiGrid({ kpis }: { kpis: Kpis }) {
         value={formatNumber(kpis.ntfQuantity)}
         secondaryLabel="Value"
         secondaryValue={formatCurrency(kpis.ntfValue)}
-        description={`${formatNumber(kpis.ntfCount)} row(s) have a remark containing NTF.`}
+        description={`${formatNumber(kpis.ntfCount)} dated row(s) have NTF in Rack, Shelf, or Remark.`}
         icon={Activity}
         tone="orange"
+        notice={{
+          label: 'Undated NTF',
+          value: `${formatNumber(undatedNtf.quantity)} | ${formatCurrency(
+            undatedNtf.value
+          )}`,
+          description: `${formatNumber(
+            undatedNtf.count
+          )} row(s) without a valid date${
+            undatedNtf.missingCostRowCount
+              ? `; ${formatNumber(
+                  undatedNtf.missingCostRowCount
+                )} missing cost.`
+              : '.'
+          }`
+        }}
       />
       </div>
     </div>
@@ -640,6 +730,24 @@ export default function App() {
     filters,
     transactions
   ]);
+
+  const visibleUndatedNtf = useMemo(() => {
+    const undatedRows = transactions.filter((row) => {
+      if (row.date) {
+        return false;
+      }
+
+      return (
+        (!filters.facility || row.facility === filters.facility) &&
+        (!filters.rack || row.rack === filters.rack) &&
+        (!filters.sku || row.skuCode === filters.sku) &&
+        (!filters.batch || row.batch === filters.batch) &&
+        (!filters.remark || row.remark === filters.remark)
+      );
+    });
+
+    return calculateNtfSummary(undatedRows);
+  }, [filters, transactions]);
 
   const chartData = useMemo(
     () => calculateCharts(filteredRows),
@@ -802,7 +910,10 @@ export default function App() {
           />
 
           <main className="mx-auto max-w-[1600px] px-4 py-8 sm:px-6 lg:px-8">
-            <AccuracyBanner
+            <QuantityAccuracyBanner
+              periods={bannerPeriods || dashboard.periods}
+            />
+            <ValueAccuracyBanner
               periods={bannerPeriods || dashboard.periods}
             />
             <YesterdayActivityNotice
@@ -847,7 +958,10 @@ export default function App() {
               </div>
             ) : visibleKpis ? (
               <>
-                <KpiGrid kpis={visibleKpis} />
+                <KpiGrid
+                  kpis={visibleKpis}
+                  undatedNtf={visibleUndatedNtf}
+                />
 
                 <section className="mt-10">
                   <div className="mb-5">

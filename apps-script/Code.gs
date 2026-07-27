@@ -97,7 +97,8 @@ const ACTIVITY_REASONS = [
   'Other'
 ];
 
-const DASHBOARD_CACHE_KEY = 'inventory_dashboard_v2_period_banner_v1';
+const DASHBOARD_CACHE_KEY =
+  'inventory_dashboard_v3_value_accuracy_undated_ntf_v1';
 const LAST_REFRESH_PROPERTY = 'INVENTORY_LAST_REFRESH_TIME';
 const LAST_EMAIL_SENT_PROPERTY = 'INVENTORY_LAST_EMAIL_SENT_TIME';
 const REFRESH_HANDLER = 'refreshDashboardCache';
@@ -582,7 +583,7 @@ function calculateKpis(inventoryRows, options) {
       }
     }
 
-    if (/NTF/i.test(cleanText_(row.remark))) {
+    if (isNtfRow_(row)) {
       ntfCount += 1;
       ntfQuantity += Math.abs(difference);
       if (unitCost !== null && unitCost >= 0) {
@@ -616,10 +617,16 @@ function calculateKpis(inventoryRows, options) {
   const costCoverage = rows.length === 0
     ? 0
     : (costedRowCount / rows.length) * 100;
+  const absoluteDifferenceValue = shortValue + excessValue;
+  const valueAccuracy = systemValue === 0
+    ? 0
+    : 100 - (absoluteDifferenceValue / systemValue) * 100;
 
   return {
     inventoryAccuracy: round_(inventoryAccuracy, 2),
     inventoryAccuracyStyle: getAccuracyStyle(inventoryAccuracy),
+    valueAccuracy: round_(valueAccuracy, 2),
+    valueAccuracyStyle: getAccuracyStyle(valueAccuracy),
     binAccuracy: round_(binAccuracy, 2),
     binAccuracyStyle: getAccuracyStyle(binAccuracy),
     systemQuantity: round_(systemQuantity, 2),
@@ -631,6 +638,7 @@ function calculateKpis(inventoryRows, options) {
     physicalValue: round_(physicalValue, 2),
     totalInventoryValue: round_(systemValue, 2),
     netDifferenceValue: round_(physicalValue - systemValue, 2),
+    absoluteDifferenceValue: round_(absoluteDifferenceValue, 2),
     shortValue: round_(shortValue, 2),
     excessValue: round_(excessValue, 2),
     costCoverage: round_(costCoverage, 2),
@@ -643,6 +651,61 @@ function calculateKpis(inventoryRows, options) {
     ntfCount: ntfCount,
     ntfQuantity: round_(ntfQuantity, 2),
     ntfValue: round_(ntfValue, 2)
+  };
+}
+
+/**
+ * Identifies one NTF row from Rack, Shelf, or Remark.
+ *
+ * Checking all three fields preserves the original Remark behaviour while
+ * supporting the Rack and Shelf markers used in the source sheets. A row is
+ * evaluated once, so repeated NTF text does not double-count it.
+ */
+function isNtfRow_(row) {
+  const inventoryRow = row || {};
+  return [inventoryRow.rack, inventoryRow.shelf, inventoryRow.remark].some(
+    function (value) {
+      return /NTF/i.test(cleanText_(value));
+    }
+  );
+}
+
+/**
+ * Summarizes NTF rows without assigning them to a reporting period.
+ *
+ * This is used for NTF records whose Date is blank or invalid. Known value is
+ * calculated only where a valid COGS rate is available.
+ */
+function summarizeNtf_(inventoryRows) {
+  const rows = Array.isArray(inventoryRows) ? inventoryRows : [];
+  let count = 0;
+  let quantity = 0;
+  let value = 0;
+  let missingCostRowCount = 0;
+
+  rows.forEach(function (row) {
+    if (!isNtfRow_(row)) {
+      return;
+    }
+
+    const absoluteDifference = Math.abs(toNumber_(row.difference));
+    const unitCost = optionalNumber_(row.unitCost);
+
+    count += 1;
+    quantity += absoluteDifference;
+
+    if (unitCost !== null && unitCost >= 0) {
+      value += absoluteDifference * unitCost;
+    } else {
+      missingCostRowCount += 1;
+    }
+  });
+
+  return {
+    count: count,
+    quantity: round_(quantity, 2),
+    value: round_(value, 2),
+    missingCostRowCount: missingCostRowCount
   };
 }
 
@@ -899,7 +962,12 @@ function sendInventoryEmail() {
 
   const dashboard = buildDashboard_();
   const period = dashboard.periods.yesterday;
-  const report = buildEmailReport_(config, period, dashboard.periods);
+  const report = buildEmailReport_(
+    config,
+    period,
+    dashboard.periods,
+    dashboard.undatedNtf
+  );
   const htmlBody = renderEmailTemplate_(report);
   const mailOptions = {
     to: config.emailTo,
@@ -950,7 +1018,12 @@ function testEmailPreview() {
   const config = getConfig();
   const dashboard = buildDashboard_();
   const period = dashboard.periods.yesterday;
-  const report = buildEmailReport_(config, period, dashboard.periods);
+  const report = buildEmailReport_(
+    config,
+    period,
+    dashboard.periods,
+    dashboard.undatedNtf
+  );
   const html = renderEmailTemplate_(report);
   const result = {
     passed: true,
@@ -960,6 +1033,9 @@ function testEmailPreview() {
     zeroActivity: report.zeroActivity,
     periodSummaryCount: report.periodSummary.length,
     periodSummary: report.periodSummary,
+    valuePeriodSummaryCount: report.valuePeriodSummary.length,
+    valuePeriodSummary: report.valuePeriodSummary,
+    undatedNtf: dashboard.undatedNtf,
     metricCount: report.metrics.length,
     negativeNumberExample: formatEmailNumber_(-6307),
     negativeValueExample: formatEmailCurrency_(-225811.56),
@@ -1009,6 +1085,7 @@ function testQuarterData() {
  *
  * Expected:
  * Inventory Accuracy 96.4
+ * Value Accuracy 97
  * Bin Accuracy 50
  * Net Difference -5
  * Short 7
@@ -1070,8 +1147,15 @@ function testKpiCalculations() {
       workingDays: 26
     }
   });
+  const undatedNtf = summarizeNtf_(sampleRows);
 
   assertEqual_(result.inventoryAccuracy, 96.4, 'Inventory Accuracy');
+  assertEqual_(result.valueAccuracy, 97, 'Value Accuracy');
+  assertEqual_(
+    result.absoluteDifferenceValue,
+    60,
+    'Absolute Difference Value'
+  );
   assertEqual_(result.binAccuracy, 50, 'Bin Accuracy');
   assertEqual_(result.netDifference, -5, 'Net Difference');
   assertEqual_(result.shortQuantity, 7, 'Short Quantity');
@@ -1100,11 +1184,15 @@ function testKpiCalculations() {
   assertEqual_(result.ntfCount, 1, 'NTF Count');
   assertEqual_(result.ntfQuantity, 2, 'NTF Quantity');
   assertEqual_(result.ntfValue, 20, 'NTF Value');
+  assertEqual_(undatedNtf.count, 1, 'Undated NTF Count');
+  assertEqual_(undatedNtf.quantity, 2, 'Undated NTF Quantity');
+  assertEqual_(undatedNtf.value, 20, 'Undated NTF Value');
 
   const output = {
     passed: true,
     message: 'All sample KPI tests passed.',
-    kpis: result
+    kpis: result,
+    undatedNtf: undatedNtf
   };
 
   console.log(JSON.stringify(output, null, 2));
@@ -1200,6 +1288,9 @@ function buildDashboard_() {
   const rows = inventoryData.allRows;
   const ranges = reportingRanges_();
   const periods = {};
+  const undatedNtfRows = rows.filter(function (row) {
+    return !row.date && isNtfRow_(row);
+  });
 
   Object.keys(ranges).forEach(function (periodKey) {
     const range = ranges[periodKey];
@@ -1230,6 +1321,7 @@ function buildDashboard_() {
     dashboardName: config.dashboardName,
     theme: config.theme,
     periods: periods,
+    undatedNtf: summarizeNtf_(undatedNtfRows),
     sourceSummary: sourceSummary_(
       inventoryData.currentRows,
       inventoryData.historicalRows
@@ -1240,9 +1332,11 @@ function buildDashboard_() {
 /**
  * Creates the simple view model consumed by EmailTemplate.html.
  */
-function buildEmailReport_(config, period, periods) {
+function buildEmailReport_(config, period, periods, undatedNtf) {
   const kpis = period.kpis;
+  const undatedNtfSummary = undatedNtf || summarizeNtf_([]);
   const inventoryStyle = getAccuracyStyle(kpis.inventoryAccuracy);
+  const valueAccuracyStyle = getAccuracyStyle(kpis.valueAccuracy);
   const binStyle = getAccuracyStyle(kpis.binAccuracy);
   const standardStyle = {
     text: '#1e3a8a',
@@ -1303,13 +1397,35 @@ function buildEmailReport_(config, period, periods) {
         quantity: formatEmailNumber_(
           summaryPeriod.kpis.systemQuantity
         ),
-        inventoryValue: formatEmailCurrency_(
-          summaryPeriod.kpis.systemValue
-        ),
         dateRange:
           formatEmailDate_(summaryPeriod.startDate) +
           ' - ' +
           formatEmailDate_(summaryPeriod.endDate),
+        textColor: style.text,
+        backgroundColor: style.background,
+        indicatorColor: style.indicator
+      };
+    }),
+    valuePeriodSummary: [
+      periods.lastQuarter,
+      periods.lastMonth,
+      periods.monthToDate,
+      periods.yesterday
+    ].map(function (summaryPeriod) {
+      const style = getAccuracyStyle(
+        summaryPeriod.kpis.valueAccuracy
+      );
+      return {
+        label: summaryPeriod.label,
+        value: formatEmailPercent_(
+          summaryPeriod.kpis.valueAccuracy
+        ),
+        inventoryValue: formatEmailCurrency_(
+          summaryPeriod.kpis.systemValue
+        ),
+        costCoverage: formatEmailPercent_(
+          summaryPeriod.kpis.costCoverage
+        ),
         textColor: style.text,
         backgroundColor: style.background,
         indicatorColor: style.indicator
@@ -1342,6 +1458,11 @@ function buildEmailReport_(config, period, periods) {
         inventoryStyle
       ),
       emailMetric_(
+        'Value Accuracy (COGS)',
+        formatEmailPercent_(kpis.valueAccuracy),
+        valueAccuracyStyle
+      ),
+      emailMetric_(
         'System Qty / Value',
         formatEmailNumber_(kpis.systemQuantity) +
           ' | ' +
@@ -1367,6 +1488,16 @@ function buildEmailReport_(config, period, periods) {
         formatEmailNumber_(kpis.ntfQuantity) +
           ' | ' +
           formatEmailCurrency_(kpis.ntfValue),
+        warningStyle
+      ),
+      emailMetric_(
+        'Undated NTF Qty / Value',
+        formatEmailNumber_(undatedNtfSummary.quantity) +
+          ' | ' +
+          formatEmailCurrency_(undatedNtfSummary.value) +
+          ' (' +
+          formatEmailNumber_(undatedNtfSummary.count) +
+          ' rows)',
         warningStyle
       ),
       emailMetric_(

@@ -4,7 +4,8 @@ import type {
   DashboardFilters,
   FilterOptions,
   InventoryTransaction,
-  Kpis
+  Kpis,
+  NtfSummary
 } from './types';
 
 export const EMPTY_FILTERS: DashboardFilters = {
@@ -119,7 +120,7 @@ export function calculateFilteredKpis(
       }
     }
 
-    if (/NTF/i.test(row.remark)) {
+    if (isNtfTransaction(row)) {
       ntfCount += 1;
       ntfQuantity += Math.abs(row.difference);
       if (hasCost) {
@@ -155,10 +156,17 @@ export function calculateFilteredKpis(
       : (actualBinCount / plannedBinCount) * 100;
   const costCoverage =
     rows.length === 0 ? 0 : (costedRowCount / rows.length) * 100;
+  const absoluteDifferenceValue = shortValue + excessValue;
+  const valueAccuracy =
+    systemValue === 0
+      ? 0
+      : 100 - (absoluteDifferenceValue / systemValue) * 100;
 
   return {
     inventoryAccuracy: round(inventoryAccuracy),
     inventoryAccuracyStyle: getAccuracyStyle(inventoryAccuracy),
+    valueAccuracy: round(valueAccuracy),
+    valueAccuracyStyle: getAccuracyStyle(valueAccuracy),
     binAccuracy: round(binAccuracy),
     binAccuracyStyle: getAccuracyStyle(binAccuracy),
     systemQuantity: round(systemQuantity),
@@ -170,6 +178,7 @@ export function calculateFilteredKpis(
     physicalValue: round(physicalValue),
     totalInventoryValue: round(systemValue),
     netDifferenceValue: round(physicalValue - systemValue),
+    absoluteDifferenceValue: round(absoluteDifferenceValue),
     shortValue: round(shortValue),
     excessValue: round(excessValue),
     costCoverage: round(costCoverage),
@@ -182,6 +191,56 @@ export function calculateFilteredKpis(
     ntfCount,
     ntfQuantity: round(ntfQuantity),
     ntfValue: round(ntfValue)
+  };
+}
+
+/**
+ * Returns true when Rack, Shelf, or Remark marks a transaction as NTF.
+ * A row is evaluated once, so NTF in more than one field is not double-counted.
+ */
+export function isNtfTransaction(row: InventoryTransaction) {
+  return [row.rack, row.shelf, row.remark].some((value) =>
+    /NTF/i.test(value || '')
+  );
+}
+
+/**
+ * Summarizes NTF quantity and known value for a supplied set of transactions.
+ */
+export function calculateNtfSummary(
+  rows: InventoryTransaction[]
+): NtfSummary {
+  let count = 0;
+  let quantity = 0;
+  let value = 0;
+  let missingCostRowCount = 0;
+
+  rows.forEach((row) => {
+    if (!isNtfTransaction(row)) {
+      return;
+    }
+
+    const absoluteDifference = Math.abs(row.difference);
+    const hasCost =
+      typeof row.unitCost === 'number' &&
+      Number.isFinite(row.unitCost) &&
+      row.unitCost >= 0;
+
+    count += 1;
+    quantity += absoluteDifference;
+
+    if (hasCost) {
+      value += absoluteDifference * (row.unitCost as number);
+    } else {
+      missingCostRowCount += 1;
+    }
+  });
+
+  return {
+    count,
+    quantity: round(quantity),
+    value: round(value),
+    missingCostRowCount
   };
 }
 
@@ -245,9 +304,7 @@ export function calculateCharts(
       categories: dates,
       values: dates.map(
         (date) =>
-          (rowsByDate.get(date) || []).filter((row) =>
-            /NTF/i.test(row.remark)
-          ).length
+          (rowsByDate.get(date) || []).filter(isNtfTransaction).length
       )
     }
   };

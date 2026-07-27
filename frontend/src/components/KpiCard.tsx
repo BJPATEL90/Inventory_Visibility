@@ -16,6 +16,11 @@ interface KpiCardProps {
   description: string;
   icon: LucideIcon;
   tone?: CardTone;
+  notice?: {
+    label: string;
+    value: string;
+    description?: string;
+  };
 }
 
 const toneClasses: Record<CardTone, string> = {
@@ -38,7 +43,8 @@ export function KpiCard({
   secondaryLabel,
   description,
   icon: Icon,
-  tone = 'blue'
+  tone = 'blue',
+  notice
 }: KpiCardProps) {
   return (
     <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-shadow hover:shadow-md dark:border-slate-800 dark:bg-slate-900">
@@ -66,6 +72,21 @@ export function KpiCard({
       <p className="mt-4 text-xs leading-5 text-slate-500 dark:text-slate-400">
         {description}
       </p>
+      {notice ? (
+        <div className="mt-4 rounded-xl border border-orange-200 bg-orange-50 px-3 py-2.5 dark:border-orange-900 dark:bg-orange-950/40">
+          <p className="text-xs font-bold uppercase tracking-wide text-orange-700 dark:text-orange-300">
+            {notice.label}
+          </p>
+          <p className="mt-1 text-sm font-bold text-orange-950 dark:text-orange-100">
+            {notice.value}
+          </p>
+          {notice.description ? (
+            <p className="mt-1 text-xs leading-4 text-orange-700 dark:text-orange-300">
+              {notice.description}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
     </article>
   );
 }

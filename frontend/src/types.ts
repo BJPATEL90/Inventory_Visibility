@@ -21,6 +21,8 @@ export interface AccuracyStyle {
 export interface Kpis {
   inventoryAccuracy: number;
   inventoryAccuracyStyle: AccuracyStyle;
+  valueAccuracy: number;
+  valueAccuracyStyle: AccuracyStyle;
   binAccuracy: number;
   binAccuracyStyle: AccuracyStyle;
   systemQuantity: number;
@@ -32,6 +34,7 @@ export interface Kpis {
   physicalValue: number;
   totalInventoryValue: number;
   netDifferenceValue: number;
+  absoluteDifferenceValue: number;
   shortValue: number;
   excessValue: number;
   costCoverage: number;
@@ -44,6 +47,13 @@ export interface Kpis {
   ntfCount: number;
   ntfQuantity: number;
   ntfValue: number;
+}
+
+export interface NtfSummary {
+  count: number;
+  quantity: number;
+  value: number;
+  missingCostRowCount: number;
 }
 
 export interface ZeroActivity {
@@ -65,6 +75,7 @@ export interface DashboardData {
   dashboardName: string;
   theme: string;
   periods: Record<PeriodKey, PeriodData>;
+  undatedNtf: NtfSummary;
   sourceSummary: {
     combinedRowCount: number;
     historicalRowCount: number;

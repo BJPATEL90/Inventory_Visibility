@@ -19,6 +19,17 @@ Version 2 adds read-only cost integration, value-based KPIs, and a four-period
 Inventory Accuracy banner. Inventory rows are matched to the `COGS` sheet by
 SKU. All values use Indian rupees and `Unit Rate (Excluding Gst)`.
 
+The executive area now separates the two accuracy measures:
+
+- **Inventory Accuracy — Quantity** uses absolute quantity difference divided
+  by System Quantity.
+- **Inventory Accuracy — Value / COGS** uses absolute difference value divided
+  by System Value and shows Cost Coverage.
+
+NTF matching checks Rack, Shelf, and Remark without double-counting a row.
+NTF records without a valid Date are shown separately as **Undated NTF** and
+are not assigned to Last Quarter, Last Month, MTD, Yesterday, or trend charts.
+
 Added KPIs:
 
 - Total Inventory Value
@@ -27,6 +38,8 @@ Added KPIs:
 - Short Value
 - Excess Value
 - Cost Coverage
+- Value Accuracy
+- Undated NTF Quantity and Known Value
 
 Rows without a valid matching COGS rate are excluded from value totals and
 reported through Cost Coverage. Version 1 quantity calculations are unchanged.
@@ -506,6 +519,9 @@ Apps Script is still deployed separately through the Apps Script editor.
 - [ ] Confirm Month to Date planned bins equals Daily Planned Bin Count
   multiplied by completed working days.
 - [ ] Confirm `NTF` matching is case-insensitive.
+- [ ] Confirm NTF is detected from Rack, Shelf, or Remark without
+  double-counting.
+- [ ] Confirm Undated NTF appears separately and does not change dated KPIs.
 - [ ] Confirm accuracy colours: below 96 red, 96 to below 99 yellow, and 99 or
   above green.
 
@@ -513,6 +529,9 @@ Apps Script is still deployed separately through the Apps Script editor.
 
 - [ ] Confirm the Inventory Accuracy banner shows Last Quarter, Last Month,
   Month to Date, and Yesterday.
+- [ ] Confirm the quantity ribbon no longer contains System Value.
+- [ ] Confirm the Value / COGS ribbon shows Value Accuracy, System Value, and
+  Cost Coverage for all four periods.
 - [ ] Test Date, Facility, Rack, SKU, Batch, and Remark filters.
 - [ ] Select a date from `Q1-AMJ26` and confirm its transaction rows appear.
 - [ ] Confirm KPI cards, all charts, and the transaction table change together.

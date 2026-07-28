@@ -98,7 +98,7 @@ const ACTIVITY_REASONS = [
 ];
 
 const DASHBOARD_CACHE_KEY =
-  'inventory_dashboard_v3_value_accuracy_undated_ntf_v1';
+  'inventory_dashboard_v4_ntf_as_shortage_v1';
 const LAST_REFRESH_PROPERTY = 'INVENTORY_LAST_REFRESH_TIME';
 const LAST_EMAIL_SENT_PROPERTY = 'INVENTORY_LAST_EMAIL_SENT_TIME';
 const REFRESH_HANDLER = 'refreshDashboardCache';
@@ -314,7 +314,7 @@ function getCombinedData(optionalSpreadsheet, optionalCostMap) {
           : null;
       const unitCost = costRecord ? costRecord.unitCost : null;
 
-      combinedRows.push({
+      combinedRows.push(normalizeNtfShortage_({
         id: sheetName + '-' + String(rowIndex + 1),
         sourceType: 'current',
         facility: sheetName,
@@ -346,7 +346,7 @@ function getCombinedData(optionalSpreadsheet, optionalCostMap) {
           ? null
           : round_(difference * unitCost, 2),
         remark: cleanText_(row[indexes['Remark']])
-      });
+      }));
     }
   });
 
@@ -412,7 +412,7 @@ function getHistoricalData(optionalSpreadsheet, optionalCostMap) {
       ? physicalQuantity - systemQuantity
       : toNumber_(rawDifference);
 
-    historicalRows.push({
+    historicalRows.push(normalizeNtfShortage_({
       id: HISTORICAL_SHEET_NAME + '-' + String(rowIndex + 1),
       sourceType: 'historical',
       facility: normalizeFacility_(row[indexes['Facility']]),
@@ -444,7 +444,7 @@ function getHistoricalData(optionalSpreadsheet, optionalCostMap) {
         ? null
         : round_(difference * unitCost, 2),
       remark: cleanText_(row[indexes['Remarks']])
-    });
+    }));
   }
 
   return historicalRows;
@@ -539,16 +539,18 @@ function calculateKpis(inventoryRows, options) {
   let excessValue = 0;
   let costedRowCount = 0;
   let missingCostRowCount = 0;
-  let ntfCount = 0;
-  let ntfQuantity = 0;
-  let ntfValue = 0;
   const binDifferences = {};
   const missingCostSkus = {};
 
   rows.forEach(function (row) {
     const system = toNumber_(row.systemQuantity);
-    const physical = toNumber_(row.physicalQuantity);
-    const difference = toNumber_(row.difference);
+    const ntfRow = isNtfRow_(row);
+    const physical = ntfRow
+      ? 0
+      : toNumber_(row.physicalQuantity);
+    const difference = ntfRow
+      ? 0 - system
+      : toNumber_(row.difference);
     const unitCost = optionalNumber_(row.unitCost);
 
     systemQuantity += system;
@@ -580,14 +582,6 @@ function calculateKpis(inventoryRows, options) {
       const missingSku = normalizeSku_(row.skuCode);
       if (missingSku) {
         missingCostSkus[missingSku] = true;
-      }
-    }
-
-    if (isNtfRow_(row)) {
-      ntfCount += 1;
-      ntfQuantity += Math.abs(difference);
-      if (unitCost !== null && unitCost >= 0) {
-        ntfValue += Math.abs(difference) * unitCost;
       }
     }
 
@@ -647,10 +641,7 @@ function calculateKpis(inventoryRows, options) {
     missingCostSkuCount: Object.keys(missingCostSkus).length,
     plannedBinCount: round_(plannedBinCount, 2),
     actualBinCount: actualBinCount,
-    cycleCountCompletion: round_(completion, 2),
-    ntfCount: ntfCount,
-    ntfQuantity: round_(ntfQuantity, 2),
-    ntfValue: round_(ntfValue, 2)
+    cycleCountCompletion: round_(completion, 2)
   };
 }
 
@@ -671,42 +662,31 @@ function isNtfRow_(row) {
 }
 
 /**
- * Summarizes NTF rows without assigning them to a reporting period.
+ * Applies the business rule for Inventory Not Found rows.
  *
- * This is used for NTF records whose Date is blank or invalid. Known value is
- * calculated only where a valid COGS rate is available.
+ * NTF means the system inventory exists but the physical quantity was not
+ * found. The API therefore exposes Physical Quantity as zero and Difference
+ * as zero minus System Quantity. This keeps every downstream KPI, table, CSV,
+ * chart, and email calculation consistent.
  */
-function summarizeNtf_(inventoryRows) {
-  const rows = Array.isArray(inventoryRows) ? inventoryRows : [];
-  let count = 0;
-  let quantity = 0;
-  let value = 0;
-  let missingCostRowCount = 0;
+function normalizeNtfShortage_(row) {
+  if (!isNtfRow_(row)) {
+    return row;
+  }
 
-  rows.forEach(function (row) {
-    if (!isNtfRow_(row)) {
-      return;
-    }
+  const systemQuantity = toNumber_(row.systemQuantity);
+  const unitCost = optionalNumber_(row.unitCost);
 
-    const absoluteDifference = Math.abs(toNumber_(row.difference));
-    const unitCost = optionalNumber_(row.unitCost);
+  row.physicalQuantity = 0;
+  row.difference = 0 - systemQuantity;
+  row.physicalValue = unitCost === null
+    ? null
+    : 0;
+  row.differenceValue = unitCost === null
+    ? null
+    : round_((0 - systemQuantity) * unitCost, 2);
 
-    count += 1;
-    quantity += absoluteDifference;
-
-    if (unitCost !== null && unitCost >= 0) {
-      value += absoluteDifference * unitCost;
-    } else {
-      missingCostRowCount += 1;
-    }
-  });
-
-  return {
-    count: count,
-    quantity: round_(quantity, 2),
-    value: round_(value, 2),
-    missingCostRowCount: missingCostRowCount
-  };
+  return row;
 }
 
 /**
@@ -965,8 +945,7 @@ function sendInventoryEmail() {
   const report = buildEmailReport_(
     config,
     period,
-    dashboard.periods,
-    dashboard.undatedNtf
+    dashboard.periods
   );
   const htmlBody = renderEmailTemplate_(report);
   const mailOptions = {
@@ -1021,8 +1000,7 @@ function testEmailPreview() {
   const report = buildEmailReport_(
     config,
     period,
-    dashboard.periods,
-    dashboard.undatedNtf
+    dashboard.periods
   );
   const html = renderEmailTemplate_(report);
   const result = {
@@ -1035,7 +1013,6 @@ function testEmailPreview() {
     periodSummary: report.periodSummary,
     valuePeriodSummaryCount: report.valuePeriodSummary.length,
     valuePeriodSummary: report.valuePeriodSummary,
-    undatedNtf: dashboard.undatedNtf,
     metricCount: report.metrics.length,
     negativeNumberExample: formatEmailNumber_(-6307),
     negativeValueExample: formatEmailCurrency_(-225811.56),
@@ -1084,22 +1061,21 @@ function testQuarterData() {
  * Tests KPI formulas with known sample data.
  *
  * Expected:
- * Inventory Accuracy 96.4
- * Value Accuracy 97
- * Bin Accuracy 50
- * Net Difference -5
- * Short 7
+ * Inventory Accuracy 57.2
+ * Value Accuracy 48
+ * Bin Accuracy 0
+ * Net Difference -103
+ * Short 105
  * Excess 2
  * Total Inventory Value 2,000
- * Physical Value 2,020
- * Net Difference Value 20
- * Short Value 20
+ * Physical Value 1,040
+ * Net Difference Value -960
+ * Short Value 1,000
  * Excess Value 40
  * Cost Coverage 66.67
  * Actual Bins 2
- * NTF Count 1
- * NTF Quantity 2
- * NTF Value 20
+ * NTF Physical Quantity 0
+ * NTF Difference -100
  */
 function testKpiCalculations() {
   const sampleRows = [
@@ -1147,21 +1123,23 @@ function testKpiCalculations() {
       workingDays: 26
     }
   });
-  const undatedNtf = summarizeNtf_(sampleRows);
+  const normalizedNtf = normalizeNtfShortage_(
+    Object.assign({}, sampleRows[0])
+  );
 
-  assertEqual_(result.inventoryAccuracy, 96.4, 'Inventory Accuracy');
-  assertEqual_(result.valueAccuracy, 97, 'Value Accuracy');
+  assertEqual_(result.inventoryAccuracy, 57.2, 'Inventory Accuracy');
+  assertEqual_(result.valueAccuracy, 48, 'Value Accuracy');
   assertEqual_(
     result.absoluteDifferenceValue,
-    60,
+    1040,
     'Absolute Difference Value'
   );
-  assertEqual_(result.binAccuracy, 50, 'Bin Accuracy');
-  assertEqual_(result.netDifference, -5, 'Net Difference');
-  assertEqual_(result.shortQuantity, 7, 'Short Quantity');
+  assertEqual_(result.binAccuracy, 0, 'Bin Accuracy');
+  assertEqual_(result.netDifference, -103, 'Net Difference');
+  assertEqual_(result.shortQuantity, 105, 'Short Quantity');
   assertEqual_(result.excessQuantity, 2, 'Excess Quantity');
   assertEqual_(result.systemValue, 2000, 'System Value');
-  assertEqual_(result.physicalValue, 2020, 'Physical Value');
+  assertEqual_(result.physicalValue, 1040, 'Physical Value');
   assertEqual_(
     result.totalInventoryValue,
     2000,
@@ -1169,10 +1147,10 @@ function testKpiCalculations() {
   );
   assertEqual_(
     result.netDifferenceValue,
-    20,
+    -960,
     'Net Difference Value'
   );
-  assertEqual_(result.shortValue, 20, 'Short Value');
+  assertEqual_(result.shortValue, 1000, 'Short Value');
   assertEqual_(result.excessValue, 40, 'Excess Value');
   assertEqual_(result.costCoverage, 66.67, 'Cost Coverage');
   assertEqual_(result.costedRowCount, 2, 'Costed Row Count');
@@ -1181,18 +1159,18 @@ function testKpiCalculations() {
   assertEqual_(result.actualBinCount, 2, 'Actual Bin Count');
   assertEqual_(result.plannedBinCount, 100, 'Planned Bin Count');
   assertEqual_(result.cycleCountCompletion, 2, 'Completion');
-  assertEqual_(result.ntfCount, 1, 'NTF Count');
-  assertEqual_(result.ntfQuantity, 2, 'NTF Quantity');
-  assertEqual_(result.ntfValue, 20, 'NTF Value');
-  assertEqual_(undatedNtf.count, 1, 'Undated NTF Count');
-  assertEqual_(undatedNtf.quantity, 2, 'Undated NTF Quantity');
-  assertEqual_(undatedNtf.value, 20, 'Undated NTF Value');
+  assertEqual_(
+    normalizedNtf.physicalQuantity,
+    0,
+    'NTF Physical Quantity'
+  );
+  assertEqual_(normalizedNtf.difference, -100, 'NTF Difference');
 
   const output = {
     passed: true,
     message: 'All sample KPI tests passed.',
     kpis: result,
-    undatedNtf: undatedNtf
+    normalizedNtf: normalizedNtf
   };
 
   console.log(JSON.stringify(output, null, 2));
@@ -1260,6 +1238,55 @@ function testValueKpis() {
 }
 
 /**
+ * Verifies the live NTF-as-shortage rule and prints the recalculated periods.
+ *
+ * This test is read-only. It confirms that current NTF rows expose Physical
+ * Quantity as zero, Difference as zero minus System Quantity, and that current
+ * undated NTF rows are included in Month to Date.
+ */
+function testNtfRecalculation() {
+  const inventoryData = getAllInventoryData_();
+  const currentNtfRows = inventoryData.currentRows.filter(isNtfRow_);
+  const currentUndatedNtfRows = currentNtfRows.filter(function (row) {
+    return !row.date;
+  });
+  const invalidRows = currentNtfRows.filter(function (row) {
+    return Math.abs(toNumber_(row.physicalQuantity)) > 0.000001 ||
+      Math.abs(
+        toNumber_(row.difference) +
+        toNumber_(row.systemQuantity)
+      ) > 0.000001;
+  });
+  const dashboard = refreshDashboardCache();
+  const output = {
+    passed: invalidRows.length === 0,
+    rule: 'NTF Physical Quantity = 0; Difference = 0 - System Quantity',
+    currentNtfRowCount: currentNtfRows.length,
+    currentUndatedNtfRowCount: currentUndatedNtfRows.length,
+    currentUndatedNtfSystemQuantity: round_(
+      currentUndatedNtfRows.reduce(function (total, row) {
+        return total + toNumber_(row.systemQuantity);
+      }, 0),
+      2
+    ),
+    invalidNtfRowCount: invalidRows.length,
+    periods: dashboard.periods,
+    lastRefreshTime: getLastRefreshTime_()
+  };
+
+  if (!output.passed) {
+    throw new Error(
+      'NTF normalization failed for ' +
+        String(invalidRows.length) +
+        ' row(s).'
+    );
+  }
+
+  console.log(JSON.stringify(output, null, 2));
+  return output;
+}
+
+/**
  * Tests both read-only master APIs and prints a compact result.
  *
  * This function never writes to either master sheet.
@@ -1288,16 +1315,20 @@ function buildDashboard_() {
   const rows = inventoryData.allRows;
   const ranges = reportingRanges_();
   const periods = {};
-  const undatedNtfRows = rows.filter(function (row) {
-    return !row.date && isNtfRow_(row);
-  });
 
   Object.keys(ranges).forEach(function (periodKey) {
     const range = ranges[periodKey];
     const periodRows = rows.filter(function (row) {
-      return row.date &&
+      const isDatedPeriodRow = row.date &&
         row.date >= range.startDate &&
         row.date <= range.endDate;
+      const isCurrentUndatedNtf =
+        periodKey === 'monthToDate' &&
+        row.sourceType === 'current' &&
+        !row.date &&
+        isNtfRow_(row);
+
+      return isDatedPeriodRow || isCurrentUndatedNtf;
     });
 
     periods[periodKey] = {
@@ -1321,7 +1352,6 @@ function buildDashboard_() {
     dashboardName: config.dashboardName,
     theme: config.theme,
     periods: periods,
-    undatedNtf: summarizeNtf_(undatedNtfRows),
     sourceSummary: sourceSummary_(
       inventoryData.currentRows,
       inventoryData.historicalRows
@@ -1332,9 +1362,8 @@ function buildDashboard_() {
 /**
  * Creates the simple view model consumed by EmailTemplate.html.
  */
-function buildEmailReport_(config, period, periods, undatedNtf) {
+function buildEmailReport_(config, period, periods) {
   const kpis = period.kpis;
-  const undatedNtfSummary = undatedNtf || summarizeNtf_([]);
   const inventoryStyle = getAccuracyStyle(kpis.inventoryAccuracy);
   const valueAccuracyStyle = getAccuracyStyle(kpis.valueAccuracy);
   const binStyle = getAccuracyStyle(kpis.binAccuracy);
@@ -1484,23 +1513,6 @@ function buildEmailReport_(config, period, periods, undatedNtf) {
         kpis.netDifference < 0 ? warningStyle : standardStyle
       ),
       emailMetric_(
-        'NTF Qty / Value',
-        formatEmailNumber_(kpis.ntfQuantity) +
-          ' | ' +
-          formatEmailCurrency_(kpis.ntfValue),
-        warningStyle
-      ),
-      emailMetric_(
-        'Undated NTF Qty / Value',
-        formatEmailNumber_(undatedNtfSummary.quantity) +
-          ' | ' +
-          formatEmailCurrency_(undatedNtfSummary.value) +
-          ' (' +
-          formatEmailNumber_(undatedNtfSummary.count) +
-          ' rows)',
-        warningStyle
-      ),
-      emailMetric_(
         'Cost Coverage',
         formatEmailPercent_(kpis.costCoverage),
         coverageStyle
@@ -1544,7 +1556,13 @@ function buildPlainTextEmail_(report) {
   report.periodSummary.forEach(function (period) {
     lines.push(period.label + ': ' + period.value);
     lines.push('  Qty: ' + period.quantity);
+  });
+
+  lines.push('Value Accuracy Summary');
+  report.valuePeriodSummary.forEach(function (period) {
+    lines.push(period.label + ': ' + period.value);
     lines.push('  Value: ' + period.inventoryValue);
+    lines.push('  Cost Coverage: ' + period.costCoverage);
   });
 
   if (!report.hasActivity && report.zeroActivity) {

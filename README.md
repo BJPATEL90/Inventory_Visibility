@@ -87,8 +87,6 @@ The detailed cards show:
 - System Quantity and Value
 - Physical Quantity and Value
 - Net Difference Quantity and Value
-- NTF Quantity and Value
-- Undated NTF Quantity and known Value
 
 Negative quantities and values are displayed in parentheses.
 
@@ -191,9 +189,13 @@ The backend:
 - never creates or changes a physical `Combine` sheet
 - never changes the five source sheets
 
-If `Diff` is blank, the backend calculates `Phy - Sys`. If `Diff` contains a
-number, that supplied number is used for absolute difference, Short, Excess,
-bin accuracy, NTF quantity, and the related value calculations.
+If `Diff` is blank, the backend calculates `Phy - Sys`. For normal rows, a
+supplied `Diff` value is used for absolute difference, Short, Excess, bin
+accuracy, and the related value calculations.
+
+For an NTF row, the business rule overrides the source Physical Quantity and
+Difference: Physical Quantity becomes zero and Difference becomes
+`0 - System Quantity`.
 
 ## 3. Check the historical sheet
 
@@ -401,9 +403,10 @@ Run these functions one at a time:
 
 | Function | What it checks | Changes data? |
 |---|---|---|
-| `testKpiCalculations()` | Quantity, value, bin, NTF, and coverage formulas using sample rows | No |
+| `testKpiCalculations()` | Quantity, value, bin, NTF-shortage, and coverage formulas using sample rows | No |
 | `testPhase1()` | Current source rows, skipped sheets, periods, and KPIs | No |
 | `testValueKpis()` | COGS matching, coverage, and missing-cost SKUs | No |
+| `testNtfRecalculation()` | Live NTF normalization and revised four-period KPIs | No |
 | `testQuarterData()` | `Q1-AMJ26`, historical date range, and four periods | No |
 | `testMasters()` | Bin and SKU master APIs | No |
 | `testEmailPreview()` | Email model and HTML rendering without sending | No |
@@ -718,14 +721,18 @@ case-insensitively. One row is counted once even if NTF appears in more than one
 field.
 
 ```text
-NTF Count = Number of matching rows
-NTF Quantity = Sum of ABS(Diff) for matching rows
-NTF Value = Sum of ABS(Diff) x Unit Cost for costed matching rows
+Physical Quantity = 0
+Difference = 0 - System Quantity
 ```
 
-NTF rows without a valid Date are reported separately as **Undated NTF**. They
-do not affect Last Quarter, Last Month, Month to Date, Yesterday, accuracy,
-completion, or trend calculations.
+NTF is not displayed as a separate KPI card. It is treated as a normal
+inventory shortage and affects System Quantity, Physical Quantity, Net
+Difference, Short Quantity, quantity accuracy, and all related costed value
+KPIs.
+
+Dated NTF rows are included in their normal reporting date. Current-sheet NTF
+rows without a valid Date are included in Month to Date only. They cannot be
+placed in Yesterday or a daily trend without a reliable date.
 
 Other rows with a blank or invalid Date remain available in the transaction API
 but cannot be assigned to a dated KPI period. Correct their Date in the source
@@ -752,6 +759,7 @@ accuracy:
 - [ ] Run `testKpiCalculations()` and confirm it passes.
 - [ ] Run `testPhase1()` and review current row counts and skipped sheets.
 - [ ] Run `testValueKpis()` and review cost coverage and missing SKUs.
+- [ ] Run `testNtfRecalculation()` and confirm `"passed": true`.
 - [ ] Run `testQuarterData()` and review the historical date range.
 - [ ] Run `testEmailPreview()` and review both four-period summaries.
 - [ ] Test every API URL directly in a browser.
@@ -768,6 +776,8 @@ accuracy:
 - [ ] Confirm the Quantity Accuracy ribbon has four periods.
 - [ ] Confirm the Value/COGS ribbon has four periods, System Value, and Cost
   Coverage.
+- [ ] Confirm there is no separate NTF KPI card.
+- [ ] Confirm NTF rows contribute as full shortages in Month-to-Date totals.
 - [ ] Confirm the Masters section is not visible.
 - [ ] Test transaction global search.
 - [ ] Test column sorting.
@@ -857,7 +867,7 @@ Check:
 - Date is a real Google Sheets date or a valid recognizable date
 - the row is not completely blank
 - the selected period includes the date
-- undated NTF is intentionally shown separately
+- current undated NTF is included in Month to Date only
 - the source or historical sheet has every required header
 
 ## GitHub Pages is blank or has missing assets

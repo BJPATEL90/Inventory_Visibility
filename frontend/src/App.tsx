@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
-  Activity,
   AlertCircle,
   Boxes,
   CheckCircle2,
@@ -35,7 +34,6 @@ import {
 import {
   calculateCharts,
   calculateFilteredKpis,
-  calculateNtfSummary,
   EMPTY_FILTERS,
   filterTransactions,
   getFilterOptions,
@@ -47,7 +45,6 @@ import type {
   BinMasterRow,
   DashboardFilters,
   Kpis,
-  NtfSummary,
   PeriodData,
   PeriodKey,
   SkuMasterRow
@@ -493,13 +490,7 @@ function YesterdayActivityNotice({
   );
 }
 
-function KpiGrid({
-  kpis,
-  undatedNtf
-}: {
-  kpis: Kpis;
-  undatedNtf: NtfSummary;
-}) {
+function KpiGrid({ kpis }: { kpis: Kpis }) {
   const completionStyle = getAccuracyStyle(
     kpis.cycleCountCompletion
   );
@@ -571,30 +562,6 @@ function KpiGrid({
         description="Physical quantity minus system quantity."
         icon={Scale}
         tone={kpis.netDifference < 0 ? 'red' : 'blue'}
-      />
-      <KpiCard
-        label="NTF Qty and Value"
-        value={formatNumber(kpis.ntfQuantity)}
-        secondaryLabel="Value"
-        secondaryValue={formatCurrency(kpis.ntfValue)}
-        description={`${formatNumber(kpis.ntfCount)} dated row(s) have NTF in Rack, Shelf, or Remark.`}
-        icon={Activity}
-        tone="orange"
-        notice={{
-          label: 'Undated NTF',
-          value: `${formatNumber(undatedNtf.quantity)} | ${formatCurrency(
-            undatedNtf.value
-          )}`,
-          description: `${formatNumber(
-            undatedNtf.count
-          )} row(s) without a valid date${
-            undatedNtf.missingCostRowCount
-              ? `; ${formatNumber(
-                  undatedNtf.missingCostRowCount
-                )} missing cost.`
-              : '.'
-          }`
-        }}
       />
       </div>
     </div>
@@ -675,17 +642,14 @@ export default function App() {
       transactions,
       filters,
       period.startDate,
-      period.endDate
+      period.endDate,
+      true
     );
   }, [filters, period, transactions]);
 
   const visibleKpis = useMemo(() => {
     if (!period || !config) {
       return null;
-    }
-
-    if (!filtersAreActive) {
-      return period.kpis;
     }
 
     const plannedBins = filters.date
@@ -696,8 +660,8 @@ export default function App() {
   }, [config, filteredRows, filters.date, filtersAreActive, period]);
 
   const bannerPeriods = useMemo(() => {
-    if (!dashboard || !config || !dimensionFiltersAreActive) {
-      return dashboard?.periods || null;
+    if (!dashboard) {
+      return null;
     }
 
     const periodCopies = { ...dashboard.periods };
@@ -709,7 +673,8 @@ export default function App() {
         transactions,
         dimensionFilters,
         periodData.startDate,
-        periodData.endDate
+        periodData.endDate,
+        periodKey === 'monthToDate'
       );
 
       periodCopies[periodKey] = {
@@ -724,30 +689,10 @@ export default function App() {
 
     return periodCopies;
   }, [
-    config,
     dashboard,
-    dimensionFiltersAreActive,
     filters,
     transactions
   ]);
-
-  const visibleUndatedNtf = useMemo(() => {
-    const undatedRows = transactions.filter((row) => {
-      if (row.date) {
-        return false;
-      }
-
-      return (
-        (!filters.facility || row.facility === filters.facility) &&
-        (!filters.rack || row.rack === filters.rack) &&
-        (!filters.sku || row.skuCode === filters.sku) &&
-        (!filters.batch || row.batch === filters.batch) &&
-        (!filters.remark || row.remark === filters.remark)
-      );
-    });
-
-    return calculateNtfSummary(undatedRows);
-  }, [filters, transactions]);
 
   const chartData = useMemo(
     () => calculateCharts(filteredRows),
@@ -933,7 +878,7 @@ export default function App() {
                 <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
                   {filtersAreActive
                     ? `${formatNumber(filteredRows.length)} matching rows`
-                    : `${formatNumber(period?.rowCount || 0)} Month-to-Date rows`}
+                    : `${formatNumber(filteredRows.length)} Month-to-Date rows`}
                 </p>
               </div>
               <span className="inline-flex w-fit items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
@@ -958,10 +903,7 @@ export default function App() {
               </div>
             ) : visibleKpis ? (
               <>
-                <KpiGrid
-                  kpis={visibleKpis}
-                  undatedNtf={visibleUndatedNtf}
-                />
+                <KpiGrid kpis={visibleKpis} />
 
                 <section className="mt-10">
                   <div className="mb-5">
@@ -1024,7 +966,7 @@ export default function App() {
                     />
                     <DashboardChart
                       title="NTF Trend"
-                      subtitle="Daily count of rows whose remark contains NTF."
+                      subtitle="Daily count of rows with NTF in Rack, Shelf, or Remark."
                       seriesName="NTF Count"
                       categories={chartData.ntfTrend.categories}
                       values={chartData.ntfTrend.values}

@@ -4,8 +4,7 @@ import type {
   DashboardFilters,
   FilterOptions,
   InventoryTransaction,
-  Kpis,
-  NtfSummary
+  Kpis
 } from './types';
 
 export const EMPTY_FILTERS: DashboardFilters = {
@@ -47,12 +46,19 @@ export function filterTransactions(
   rows: InventoryTransaction[],
   filters: DashboardFilters,
   periodStart: string,
-  periodEnd: string
+  periodEnd: string,
+  includeCurrentUndatedNtf = false
 ) {
   return rows.filter((row) => {
     const dateMatches = filters.date
       ? row.date === filters.date
-      : row.date >= periodStart && row.date <= periodEnd;
+      : (row.date >= periodStart && row.date <= periodEnd) ||
+        (
+          includeCurrentUndatedNtf &&
+          row.sourceType === 'current' &&
+          !row.date &&
+          isNtfTransaction(row)
+        );
 
     return (
       dateMatches &&
@@ -80,21 +86,26 @@ export function calculateFilteredKpis(
   let excessValue = 0;
   let costedRowCount = 0;
   let missingCostRowCount = 0;
-  let ntfCount = 0;
-  let ntfQuantity = 0;
-  let ntfValue = 0;
   const binDifferences = new Map<string, number>();
   const missingCostSkus = new Set<string>();
 
   rows.forEach((row) => {
-    systemQuantity += row.systemQuantity;
-    physicalQuantity += row.physicalQuantity;
-    absoluteDifference += Math.abs(row.difference);
+    const ntfRow = isNtfTransaction(row);
+    const physicalQuantityForRow = ntfRow
+      ? 0
+      : row.physicalQuantity;
+    const differenceForRow = ntfRow
+      ? 0 - row.systemQuantity
+      : row.difference;
 
-    if (row.difference < 0) {
-      shortQuantity += Math.abs(row.difference);
-    } else if (row.difference > 0) {
-      excessQuantity += row.difference;
+    systemQuantity += row.systemQuantity;
+    physicalQuantity += physicalQuantityForRow;
+    absoluteDifference += Math.abs(differenceForRow);
+
+    if (differenceForRow < 0) {
+      shortQuantity += Math.abs(differenceForRow);
+    } else if (differenceForRow > 0) {
+      excessQuantity += differenceForRow;
     }
 
     const hasCost =
@@ -106,12 +117,12 @@ export function calculateFilteredKpis(
       const unitCost = row.unitCost as number;
       costedRowCount += 1;
       systemValue += row.systemQuantity * unitCost;
-      physicalValue += row.physicalQuantity * unitCost;
+      physicalValue += physicalQuantityForRow * unitCost;
 
-      if (row.difference < 0) {
-        shortValue += Math.abs(row.difference) * unitCost;
-      } else if (row.difference > 0) {
-        excessValue += row.difference * unitCost;
+      if (differenceForRow < 0) {
+        shortValue += Math.abs(differenceForRow) * unitCost;
+      } else if (differenceForRow > 0) {
+        excessValue += differenceForRow * unitCost;
       }
     } else {
       missingCostRowCount += 1;
@@ -120,20 +131,11 @@ export function calculateFilteredKpis(
       }
     }
 
-    if (isNtfTransaction(row)) {
-      ntfCount += 1;
-      ntfQuantity += Math.abs(row.difference);
-      if (hasCost) {
-        ntfValue +=
-          Math.abs(row.difference) * (row.unitCost as number);
-      }
-    }
-
     if (row.rack || row.shelf) {
       const key = [row.facility, row.rack, row.shelf].join('||');
       binDifferences.set(
         key,
-        (binDifferences.get(key) || 0) + row.difference
+        (binDifferences.get(key) || 0) + differenceForRow
       );
     }
   });
@@ -187,10 +189,7 @@ export function calculateFilteredKpis(
     missingCostSkuCount: missingCostSkus.size,
     plannedBinCount: round(plannedBinCount),
     actualBinCount,
-    cycleCountCompletion: round(completion),
-    ntfCount,
-    ntfQuantity: round(ntfQuantity),
-    ntfValue: round(ntfValue)
+    cycleCountCompletion: round(completion)
   };
 }
 
@@ -202,46 +201,6 @@ export function isNtfTransaction(row: InventoryTransaction) {
   return [row.rack, row.shelf, row.remark].some((value) =>
     /NTF/i.test(value || '')
   );
-}
-
-/**
- * Summarizes NTF quantity and known value for a supplied set of transactions.
- */
-export function calculateNtfSummary(
-  rows: InventoryTransaction[]
-): NtfSummary {
-  let count = 0;
-  let quantity = 0;
-  let value = 0;
-  let missingCostRowCount = 0;
-
-  rows.forEach((row) => {
-    if (!isNtfTransaction(row)) {
-      return;
-    }
-
-    const absoluteDifference = Math.abs(row.difference);
-    const hasCost =
-      typeof row.unitCost === 'number' &&
-      Number.isFinite(row.unitCost) &&
-      row.unitCost >= 0;
-
-    count += 1;
-    quantity += absoluteDifference;
-
-    if (hasCost) {
-      value += absoluteDifference * (row.unitCost as number);
-    } else {
-      missingCostRowCount += 1;
-    }
-  });
-
-  return {
-    count,
-    quantity: round(quantity),
-    value: round(value),
-    missingCostRowCount
-  };
 }
 
 export function calculateCharts(
@@ -343,7 +302,12 @@ function inventoryAccuracyForRows(rows: InventoryTransaction[]) {
     0
   );
   const absoluteDifference = rows.reduce(
-    (total, row) => total + Math.abs(row.difference),
+    (total, row) => {
+      const difference = isNtfTransaction(row)
+        ? 0 - row.systemQuantity
+        : row.difference;
+      return total + Math.abs(difference);
+    },
     0
   );
 
@@ -363,9 +327,12 @@ function binAccuracyForRows(rows: InventoryTransaction[]) {
     }
 
     const key = [row.facility, row.rack, row.shelf].join('||');
+    const difference = isNtfTransaction(row)
+      ? 0 - row.systemQuantity
+      : row.difference;
     binDifferences.set(
       key,
-      (binDifferences.get(key) || 0) + row.difference
+      (binDifferences.get(key) || 0) + difference
     );
   });
 

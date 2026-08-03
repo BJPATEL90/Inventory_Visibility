@@ -175,6 +175,24 @@
               </td>
             </tr>
 
+            <? if (report.quarterAttachment) { ?>
+              <tr>
+                <td style="padding:8px 32px 4px 32px;">
+                  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%; background-color:#eff6ff; border:1px solid #bfdbfe; border-radius:10px;">
+                    <tr>
+                      <td style="padding:14px 16px; color:#1e3a8a; font-size:12px; line-height:19px;">
+                        <strong>Quarter-to-date CSV attached</strong><br>
+                        <?= report.quarterAttachment.fileName ?><br>
+                        <?= report.quarterAttachment.rowCount ?> transactions from
+                        <?= report.quarterAttachment.startDate ?> to
+                        <?= report.quarterAttachment.endDate ?>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+            <? } ?>
+
             <tr>
               <td align="center" style="padding:20px 32px 28px 32px;">
                 <table role="presentation" cellspacing="0" cellpadding="0" border="0">

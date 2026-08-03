@@ -16,6 +16,7 @@
  * 8. Sends the daily HTML email report from Google's cloud.
  * 9. Joins the read-only COGS sheet and calculates Version 2 value KPIs.
  * 10. Reads Q1-AMJ26 as read-only history for quarter and past-date reporting.
+ * 11. Attaches quarter-to-date transaction data to every inventory email.
  */
 
 const SPREADSHEET_ID = '1uB9hiqI8z46_fYxiB1syRwNNw0TM_ZV2NCYZcAVmWIk';
@@ -103,6 +104,7 @@ const LAST_REFRESH_PROPERTY = 'INVENTORY_LAST_REFRESH_TIME';
 const LAST_EMAIL_SENT_PROPERTY = 'INVENTORY_LAST_EMAIL_SENT_TIME';
 const REFRESH_HANDLER = 'refreshDashboardCache';
 const EMAIL_HANDLER = 'sendInventoryEmail';
+const MAX_EMAIL_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 
 let TIME_ZONE_CACHE = '';
 
@@ -940,20 +942,32 @@ function sendInventoryEmail() {
     );
   }
 
-  const dashboard = buildDashboard_();
+  const inventoryData = getAllInventoryData_();
+  const dashboard = buildDashboard_(inventoryData);
   const period = dashboard.periods.yesterday;
+  const quarterCsv = buildQuarterCsvAttachment_(
+    inventoryData.allRows,
+    period.endDate
+  );
   const report = buildEmailReport_(
     config,
     period,
     dashboard.periods
   );
+  report.quarterAttachment = {
+    fileName: quarterCsv.fileName,
+    rowCount: quarterCsv.rowCount,
+    startDate: formatEmailDate_(quarterCsv.startDate),
+    endDate: formatEmailDate_(quarterCsv.endDate)
+  };
   const htmlBody = renderEmailTemplate_(report);
   const mailOptions = {
     to: config.emailTo,
     subject: config.emailSubject + ' - ' + report.reportingDate,
     body: buildPlainTextEmail_(report),
     htmlBody: htmlBody,
-    name: config.dashboardName
+    name: config.dashboardName,
+    attachments: [quarterCsv.blob]
   };
 
   if (config.emailCC) {
@@ -979,6 +993,9 @@ function sendInventoryEmail() {
     emailTo: config.emailTo,
     emailCC: config.emailCC,
     emailBCC: config.emailBCC,
+    attachmentFileName: quarterCsv.fileName,
+    attachmentRowCount: quarterCsv.rowCount,
+    attachmentSizeBytes: quarterCsv.sizeBytes,
     sentTime: sentTime,
     remainingDailyQuota: MailApp.getRemainingDailyQuota()
   };
@@ -995,13 +1012,24 @@ function sendInventoryEmail() {
  */
 function testEmailPreview() {
   const config = getConfig();
-  const dashboard = buildDashboard_();
+  const inventoryData = getAllInventoryData_();
+  const dashboard = buildDashboard_(inventoryData);
   const period = dashboard.periods.yesterday;
+  const quarterCsv = buildQuarterCsvAttachment_(
+    inventoryData.allRows,
+    period.endDate
+  );
   const report = buildEmailReport_(
     config,
     period,
     dashboard.periods
   );
+  report.quarterAttachment = {
+    fileName: quarterCsv.fileName,
+    rowCount: quarterCsv.rowCount,
+    startDate: formatEmailDate_(quarterCsv.startDate),
+    endDate: formatEmailDate_(quarterCsv.endDate)
+  };
   const html = renderEmailTemplate_(report);
   const result = {
     passed: true,
@@ -1016,12 +1044,153 @@ function testEmailPreview() {
     metricCount: report.metrics.length,
     negativeNumberExample: formatEmailNumber_(-6307),
     negativeValueExample: formatEmailCurrency_(-225811.56),
+    quarterAttachment: {
+      fileName: quarterCsv.fileName,
+      rowCount: quarterCsv.rowCount,
+      startDate: quarterCsv.startDate,
+      endDate: quarterCsv.endDate,
+      sizeBytes: quarterCsv.sizeBytes
+    },
     dashboardUrl: report.dashboardUrl,
     htmlLength: html.length
   };
 
   console.log(JSON.stringify(result, null, 2));
   return result;
+}
+
+/**
+ * Creates the quarter-to-date CSV attached to the inventory email.
+ *
+ * The quarter is based on the email's reporting date. For example, an email
+ * reporting 31 July includes dated rows from 1 July through 31 July. Undated
+ * rows are excluded because they cannot be assigned to a reporting quarter.
+ */
+function buildQuarterCsvAttachment_(inventoryRows, reportEndDate) {
+  const endDate = parseIsoDate_(reportEndDate);
+
+  if (!endDate) {
+    throw new Error(
+      'Unable to create the quarter CSV because the report date is invalid.'
+    );
+  }
+
+  const quarterStartMonth = Math.floor(endDate.getMonth() / 3) * 3;
+  const quarterStart = new Date(
+    endDate.getFullYear(),
+    quarterStartMonth,
+    1,
+    12,
+    0,
+    0
+  );
+  const startDateText = formatDate_(quarterStart);
+  const endDateText = formatDate_(endDate);
+  const rows = (Array.isArray(inventoryRows) ? inventoryRows : [])
+    .filter(function (row) {
+      return row.date &&
+        row.date >= startDateText &&
+        row.date <= endDateText;
+    })
+    .sort(function (first, second) {
+      const dateResult = String(first.date).localeCompare(String(second.date));
+      if (dateResult !== 0) {
+        return dateResult;
+      }
+
+      const facilityResult = String(first.facility).localeCompare(
+        String(second.facility)
+      );
+      return facilityResult !== 0
+        ? facilityResult
+        : String(first.id).localeCompare(String(second.id));
+    });
+
+  const columns = [
+    ['Facility', function (row) { return row.facility; }],
+    ['Date', function (row) { return row.date; }],
+    ['Rack', function (row) { return row.rack; }],
+    ['SKU Code', function (row) { return row.skuCode; }],
+    ['Item Name', function (row) { return row.itemName; }],
+    ['Shelf', function (row) { return row.shelf; }],
+    ['Batch', function (row) { return row.batch; }],
+    ['Vendor Batch Number', function (row) {
+      return row.vendorBatchNumber;
+    }],
+    ['Pack', function (row) { return row.pack; }],
+    ['Box', function (row) { return row.box; }],
+    ['Loose', function (row) { return row.loose; }],
+    ['Physical Quantity', function (row) { return row.physicalQuantity; }],
+    ['System Quantity', function (row) { return row.systemQuantity; }],
+    ['Difference', function (row) { return row.difference; }],
+    ['Remark', function (row) { return row.remark; }],
+    ['Unit Cost', function (row) { return csvOptionalNumber_(row.unitCost); }],
+    ['System Value', function (row) {
+      return csvOptionalNumber_(row.systemValue);
+    }],
+    ['Physical Value', function (row) {
+      return csvOptionalNumber_(row.physicalValue);
+    }],
+    ['Difference Value', function (row) {
+      return csvOptionalNumber_(row.differenceValue);
+    }],
+    ['Source Row ID', function (row) { return row.id; }]
+  ];
+  const csvLines = [
+    columns.map(function (column) {
+      return csvCell_(column[0]);
+    }).join(',')
+  ];
+
+  rows.forEach(function (row) {
+    csvLines.push(columns.map(function (column) {
+      return csvCell_(column[1](row));
+    }).join(','));
+  });
+
+  const fileName =
+    'Inventory_Transactions_QTD_' +
+    startDateText +
+    '_to_' +
+    endDateText +
+    '.csv';
+  const csvText = '\uFEFF' + csvLines.join('\r\n');
+  const blob = Utilities.newBlob(csvText, 'text/csv', fileName);
+  const sizeBytes = blob.getBytes().length;
+
+  if (sizeBytes > MAX_EMAIL_ATTACHMENT_BYTES) {
+    throw new Error(
+      'The quarter CSV is larger than 20 MB and cannot be emailed safely. ' +
+      'Reduce the reporting data or export the quarter from the dashboard.'
+    );
+  }
+
+  return {
+    blob: blob,
+    fileName: fileName,
+    rowCount: rows.length,
+    startDate: startDateText,
+    endDate: endDateText,
+    sizeBytes: sizeBytes
+  };
+}
+
+/**
+ * Escapes one value so commas, quotes, and line breaks remain valid in CSV.
+ */
+function csvCell_(value) {
+  const text = value === null || value === undefined ? '' : String(value);
+  return /[",\r\n]/.test(text)
+    ? '"' + text.replace(/"/g, '""') + '"'
+    : text;
+}
+
+/**
+ * Keeps missing COGS values blank instead of writing a misleading zero.
+ */
+function csvOptionalNumber_(value) {
+  const number = optionalNumber_(value);
+  return number === null ? '' : number;
 }
 
 /**
@@ -1309,9 +1478,9 @@ function testMasters() {
 /**
  * Builds the Last Quarter, Last Month, Month to Date, and Yesterday summary.
  */
-function buildDashboard_() {
+function buildDashboard_(optionalInventoryData) {
   const config = getConfig();
-  const inventoryData = getAllInventoryData_();
+  const inventoryData = optionalInventoryData || getAllInventoryData_();
   const rows = inventoryData.allRows;
   const ranges = reportingRanges_();
   const periods = {};
@@ -1575,6 +1744,20 @@ function buildPlainTextEmail_(report) {
     report.metrics.forEach(function (metric) {
       lines.push(metric.label + ': ' + metric.value);
     });
+  }
+
+  if (report.quarterAttachment) {
+    lines.push('Quarter-to-date CSV attached:');
+    lines.push('  File: ' + report.quarterAttachment.fileName);
+    lines.push(
+      '  Transactions: ' + report.quarterAttachment.rowCount
+    );
+    lines.push(
+      '  Period: ' +
+        report.quarterAttachment.startDate +
+        ' - ' +
+        report.quarterAttachment.endDate
+    );
   }
 
   lines.push('Generated: ' + report.generatedAt);

@@ -110,6 +110,12 @@ four-period ribbons:
 If Yesterday has no cycle-count rows, the email uses `Activity_Status` to show
 the reason and remark.
 
+Every daily email also includes one quarter-to-date CSV attachment. The file
+starts on the first day of the quarter and ends on the email reporting date.
+For example, the 31 July report contains dated transactions from 1 July through
+31 July. It includes the inventory quantities, differences, COGS values, and
+source row ID. Rows with no valid Date are not included in this dated file.
+
 ## Project structure
 
 ```text
@@ -409,7 +415,7 @@ Run these functions one at a time:
 | `testNtfRecalculation()` | Live NTF normalization and revised four-period KPIs | No |
 | `testQuarterData()` | `Q1-AMJ26`, historical date range, and four periods | No |
 | `testMasters()` | Bin and SKU master APIs | No |
-| `testEmailPreview()` | Email model and HTML rendering without sending | No |
+| `testEmailPreview()` | Email model, HTML, and quarter CSV without sending | No |
 
 For each test:
 
@@ -419,7 +425,8 @@ For each test:
 4. Confirm `"passed": true` where provided and review all counts.
 
 `testEmailPreview()` does not send an email or create a Drive file. It prints
-the preview summary and HTML length in the log.
+the preview summary, HTML length, CSV file name, quarter dates, transaction
+count, and attachment size in the log.
 
 ## 7. Deploy the Web App
 
@@ -804,6 +811,8 @@ accuracy:
 - [ ] Run `sendInventoryEmail()` manually once after enabling email.
 - [ ] Check the email in Gmail and Outlook if both are used.
 - [ ] Confirm the email contains Quantity Accuracy and Value Accuracy ribbons.
+- [ ] Confirm the email contains one `Inventory_Transactions_QTD_...csv`
+  attachment and that its first and last dates match the quarter-to-date range.
 - [ ] Run `createRefreshTrigger()` after finalizing the refresh interval.
 - [ ] Run `createDailyEmailTrigger()` after finalizing the send hour.
 - [ ] Open **Triggers** and confirm one trigger for

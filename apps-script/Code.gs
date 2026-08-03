@@ -300,7 +300,7 @@ function getCombinedData(optionalSpreadsheet, optionalCostMap) {
     }
 
     const values = sheet
-      .getRange(1, 1, sheet.getLastRow(), sheet.getLastColumn())
+      .getRange(1, 1, sheet.getLastRow(), INVENTORY_HEADERS.length)
       .getValues();
     const indexes = inventoryHeaderIndexes_(values[0], sheetName);
 
@@ -387,7 +387,7 @@ function getHistoricalData(optionalSpreadsheet, optionalCostMap) {
   }
 
   const values = sheet
-    .getRange(1, 1, sheet.getLastRow(), sheet.getLastColumn())
+    .getRange(1, 1, sheet.getLastRow(), HISTORICAL_HEADERS.length)
     .getValues();
   const indexes = historicalHeaderIndexes_(values[0], sheet.getName());
   const timeZone = getTimeZone_();
@@ -2695,7 +2695,7 @@ function readCostMap_(spreadsheet) {
   }
 
   const values = sheet
-    .getRange(1, 1, sheet.getLastRow(), sheet.getLastColumn())
+    .getRange(1, 1, sheet.getLastRow(), COST_HEADERS.length)
     .getValues();
   const normalizedHeaders = values[0].map(normalizeHeader_);
   const indexes = {};

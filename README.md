@@ -50,7 +50,12 @@ They are comparison periods, not filter buttons.
 ### Inventory Accuracy - Quantity
 
 The first ribbon shows quantity-based Inventory Accuracy and System Quantity
-for all four periods.
+for all four periods. Each period card is clickable. It opens an ABC Class
+detail panel with quantity and COGS views for A, B, C, Unclassified, and Total.
+
+The quantity view shows unique SKU count, System Quantity, Physical Quantity,
+Difference, and Accuracy. The COGS view shows costed SKU count, System Value,
+Physical Value, Difference Value, Value Accuracy, and Cost Coverage.
 
 ### Inventory Accuracy - Value / COGS
 
@@ -335,8 +340,14 @@ Facility | Rack | Bin | Status
 `SKU_Master` or `SKU_MASTER`
 
 ```text
-SKU | Item Name | Brand | Category | Pack Size
+SKU | Item Name | Brand | Category | Pack Size | ABC Class
 ```
+
+Enter only `A`, `B`, or `C` in `ABC Class`. Inventory SKUs with a blank or
+invalid class, or with no matching SKU master row, remain visible under
+`Unclassified`. SKU matching is case-insensitive. The ABC breakdown includes
+all transaction rows for the selected banner period and counts each SKU once
+within its class.
 
 Master sheet lookup is case-insensitive. These APIs remain available, but the
 Masters section is currently disabled in the frontend.
@@ -417,6 +428,7 @@ Run these functions one at a time:
 | `testMasters()` | Bin and SKU master APIs | No |
 | `testEmailPreview()` | Email model, HTML, and quarter CSV without sending | No |
 | `testPaginatedTransactions()` | Small MTD transaction page, KPI/chart summaries, and response size | No |
+| `testAbcBreakdownCalculations()` | ABC quantity and COGS formulas, negative difference, and Unclassified handling | No |
 
 For each test:
 

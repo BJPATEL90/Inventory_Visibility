@@ -52,12 +52,41 @@ export interface ZeroActivity {
   remark: string;
 }
 
+export type AbcClassName = 'A' | 'B' | 'C' | 'Unclassified' | 'Total';
+
+export interface AbcBreakdownRow {
+  abcClass: AbcClassName;
+  uniqueSkuCount: number;
+  costedSkuCount: number;
+  rowCount: number;
+  costedRowCount: number;
+  systemQuantity: number;
+  physicalQuantity: number;
+  differenceQuantity: number;
+  quantityAccuracy: number;
+  quantityAccuracyStyle: AccuracyStyle;
+  systemValue: number;
+  physicalValue: number;
+  differenceValue: number;
+  valueAccuracy: number;
+  valueAccuracyStyle: AccuracyStyle;
+  costCoverage: number;
+}
+
+export interface AbcBreakdown {
+  classes: AbcBreakdownRow[];
+  total: AbcBreakdownRow;
+  mappedSkuCount: number;
+  unclassifiedSkuCount: number;
+}
+
 export interface PeriodData {
   label: string;
   startDate: string;
   endDate: string;
   rowCount: number;
   kpis: Kpis;
+  abcBreakdown: AbcBreakdown;
   zeroActivity: ZeroActivity | null;
 }
 
@@ -105,6 +134,7 @@ export interface InventoryTransaction {
   date: string;
   rack: string;
   skuCode: string;
+  abcClass: 'A' | 'B' | 'C' | 'Unclassified';
   itemName: string;
   shelf: string;
   batch: string;
@@ -188,6 +218,7 @@ export interface SkuMasterRow {
   brand: string;
   category: string;
   packSize: string;
+  abcClass: string;
 }
 
 export interface DashboardFilters {

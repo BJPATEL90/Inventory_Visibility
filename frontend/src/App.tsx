@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   AlertCircle,
   Boxes,
   CheckCircle2,
+  ChevronDown,
   ClipboardCheck,
   Database,
   Gauge,
@@ -40,6 +41,8 @@ import {
   getAccuracyStyle
 } from './dashboardUtils';
 import type {
+  AbcBreakdown,
+  AbcBreakdownRow,
   BinMasterRow,
   DashboardFilters,
   Kpis,
@@ -90,7 +93,8 @@ const SKU_MASTER_COLUMNS: MasterColumn<SkuMasterRow>[] = [
   },
   { key: 'brand', label: 'Brand' },
   { key: 'category', label: 'Category' },
-  { key: 'packSize', label: 'Pack Size', numeric: true }
+  { key: 'packSize', label: 'Pack Size', numeric: true },
+  { key: 'abcClass', label: 'ABC Class' }
 ];
 
 const numberFormatter = new Intl.NumberFormat('en-IN', {
@@ -324,71 +328,329 @@ function SectionNavigation() {
 }
 
 function QuantityAccuracyBanner({
-  periods
+  periods,
+  selectedPeriod,
+  onSelectPeriod
 }: {
   periods: Record<PeriodKey, PeriodData>;
+  selectedPeriod: PeriodKey | null;
+  onSelectPeriod: (periodKey: PeriodKey) => void;
 }) {
   return (
-    <section
-      id="kpi-section"
-      className="scroll-mt-80 overflow-hidden rounded-3xl border border-blue-200 bg-gradient-to-r from-blue-950 via-blue-900 to-blue-800 p-5 shadow-lg shadow-blue-950/10 sm:p-6 xl:scroll-mt-32"
-    >
-      <div className="mb-5">
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-200">
-          Executive KPI
-        </p>
-        <h2 className="mt-1 text-2xl font-bold text-white">
-          Inventory Accuracy — Quantity
-        </h2>
-        <p className="mt-1 text-xs text-blue-200">
-          Accuracy uses the total absolute quantity difference.
-        </p>
-      </div>
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        {PERIOD_KEYS.map((periodKey) => {
-          const period = periods[periodKey];
-          const style = period.kpis.inventoryAccuracyStyle;
-          return (
-            <article
-              key={periodKey}
-              className="rounded-2xl border border-white/15 bg-white p-4 shadow-sm"
-            >
-              <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
-                {period.label}
-              </p>
-              <p
-                className="mt-2 text-3xl font-black tracking-tight"
-                style={{ color: style.text }}
+      <section
+        id="kpi-section"
+        className="scroll-mt-80 overflow-hidden rounded-3xl border border-blue-200 bg-gradient-to-r from-blue-950 via-blue-900 to-blue-800 p-5 shadow-lg shadow-blue-950/10 sm:p-6 xl:scroll-mt-32"
+      >
+        <div className="mb-5">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-200">
+            Executive KPI
+          </p>
+          <h2 className="mt-1 text-2xl font-bold text-white">
+            Inventory Accuracy — Quantity
+          </h2>
+          <p className="mt-1 text-xs text-blue-200">
+            Select a period to view its A, B, C quantity and COGS details.
+          </p>
+        </div>
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          {PERIOD_KEYS.map((periodKey) => {
+            const period = periods[periodKey];
+            const style = period.kpis.inventoryAccuracyStyle;
+            const isSelected = selectedPeriod === periodKey;
+
+            return (
+              <button
+                type="button"
+                key={periodKey}
+                aria-expanded={isSelected}
+                aria-controls="abc-breakdown-panel"
+                onClick={() => onSelectPeriod(periodKey)}
+                className={`rounded-2xl border bg-white p-4 text-left shadow-sm transition focus:outline-none focus:ring-4 focus:ring-blue-300/50 ${
+                  isSelected
+                    ? 'border-blue-300 ring-4 ring-blue-300/30'
+                    : 'border-white/15 hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md'
+                }`}
               >
-                {formatPercent(period.kpis.inventoryAccuracy)}
-              </p>
-              <div className="mt-3 border-t border-slate-200 pt-3 text-xs">
-                <p className="flex items-center justify-between gap-2 text-slate-600">
-                  <span className="font-medium">System Qty</span>
-                  <strong className="text-right text-slate-900">
-                    {formatNumber(period.kpis.systemQuantity)}
-                  </strong>
+                <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
+                  {period.label}
                 </p>
-              </div>
-              <p className="mt-3 text-xs text-slate-500">
-                {period.startDate} to {period.endDate}
-              </p>
-              <span
-                className="mt-3 block h-1.5 rounded-full"
-                style={{ backgroundColor: style.indicator }}
-              />
-            </article>
-          );
-        })}
+                <p
+                  className="mt-2 text-3xl font-black tracking-tight"
+                  style={{ color: style.text }}
+                >
+                  {formatPercent(period.kpis.inventoryAccuracy)}
+                </p>
+                <div className="mt-3 border-t border-slate-200 pt-3 text-xs">
+                  <p className="flex items-center justify-between gap-2 text-slate-600">
+                    <span className="font-medium">System Qty</span>
+                    <strong className="text-right text-slate-900">
+                      {formatNumber(period.kpis.systemQuantity)}
+                    </strong>
+                  </p>
+                </div>
+                <p className="mt-3 text-xs text-slate-500">
+                  {period.startDate} to {period.endDate}
+                </p>
+                <span
+                  className="mt-3 block h-1.5 rounded-full"
+                  style={{ backgroundColor: style.indicator }}
+                />
+                <span className="mt-3 flex items-center justify-between text-xs font-bold text-blue-700">
+                  {isSelected ? 'Hide ABC details' : 'View ABC details'}
+                  <ChevronDown
+                    aria-hidden="true"
+                    className={`h-4 w-4 transition-transform ${
+                      isSelected ? 'rotate-180' : ''
+                    }`}
+                  />
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </section>
+  );
+}
+
+function AbcBreakdownPanel({
+  period,
+  breakdown
+}: {
+  period: PeriodData;
+  breakdown: AbcBreakdown | undefined;
+}) {
+  if (!breakdown) {
+    return (
+      <section
+        id="abc-breakdown-panel"
+        className="mt-4 rounded-2xl border border-amber-300 bg-amber-50 p-5 text-sm text-amber-900 shadow-sm"
+      >
+        ABC details are not available in the current cached response. Refresh
+        the dashboard after the Apps Script deployment is updated.
+      </section>
+    );
+  }
+
+  const rows = [...breakdown.classes, breakdown.total];
+
+  return (
+    <section
+      id="abc-breakdown-panel"
+      className="mt-4 rounded-3xl border border-blue-200 bg-white p-5 shadow-sm dark:border-blue-900 dark:bg-slate-900 sm:p-6"
+    >
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-700 dark:text-blue-300">
+            ABC Class Detail
+          </p>
+          <h3 className="mt-1 text-xl font-bold text-slate-950 dark:text-white">
+            {period.label}: quantity and COGS capture
+          </h3>
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+            {period.startDate} to {period.endDate} · Unique SKUs are counted
+            once within each class.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2 text-xs font-semibold">
+          <span className="rounded-full bg-blue-50 px-3 py-1.5 text-blue-800 dark:bg-blue-950 dark:text-blue-200">
+            Mapped SKUs: {formatNumber(breakdown.mappedSkuCount)}
+          </span>
+          <span
+            className={`rounded-full px-3 py-1.5 ${
+              breakdown.unclassifiedSkuCount > 0
+                ? 'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200'
+                : 'bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200'
+            }`}
+          >
+            Unclassified SKUs:{' '}
+            {formatNumber(breakdown.unclassifiedSkuCount)}
+          </span>
+        </div>
       </div>
+
+      <div className="mt-5 grid gap-5 2xl:grid-cols-2">
+        <AbcQuantityTable rows={rows} />
+        <AbcValueTable rows={rows} />
+      </div>
+
+      <p className="mt-4 text-xs leading-5 text-slate-500 dark:text-slate-400">
+        Unclassified includes blank or invalid ABC Class entries and SKUs not
+        found in SKU_MASTER. COGS values exclude GST; rows without a valid cost
+        remain visible in Cost Coverage but are excluded from value totals.
+      </p>
     </section>
   );
 }
 
+function AbcClassLabel({ row }: { row: AbcBreakdownRow }) {
+  const className =
+    row.abcClass === 'A'
+      ? 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-200'
+      : row.abcClass === 'B'
+        ? 'bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-200'
+        : row.abcClass === 'C'
+          ? 'bg-cyan-100 text-cyan-800 dark:bg-cyan-950 dark:text-cyan-200'
+          : row.abcClass === 'Total'
+            ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900'
+            : 'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200';
+
+  return (
+    <span
+      className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ${className}`}
+    >
+      {row.abcClass}
+    </span>
+  );
+}
+
+function AbcQuantityTable({ rows }: { rows: AbcBreakdownRow[] }) {
+  return (
+    <AbcTableShell
+      title="Quantity view"
+      description="How much system quantity was selected and physically captured."
+    >
+      <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500 dark:bg-slate-950 dark:text-slate-400">
+        <tr>
+          <th className="px-3 py-3 text-left">Class</th>
+          <th className="px-3 py-3 text-right">Unique SKUs</th>
+          <th className="px-3 py-3 text-right">System Qty</th>
+          <th className="px-3 py-3 text-right">Physical Qty</th>
+          <th className="px-3 py-3 text-right">Difference</th>
+          <th className="px-3 py-3 text-right">Accuracy</th>
+        </tr>
+      </thead>
+      <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+        {rows.map((row) => (
+          <tr
+            key={row.abcClass}
+            className={
+              row.abcClass === 'Total'
+                ? 'bg-slate-50 font-bold dark:bg-slate-950'
+                : ''
+            }
+          >
+            <td className="px-3 py-3">
+              <AbcClassLabel row={row} />
+            </td>
+            <td className="px-3 py-3 text-right">
+              {formatNumber(row.uniqueSkuCount)}
+            </td>
+            <td className="px-3 py-3 text-right">
+              {formatNumber(row.systemQuantity)}
+            </td>
+            <td className="px-3 py-3 text-right">
+              {formatNumber(row.physicalQuantity)}
+            </td>
+            <td className="px-3 py-3 text-right">
+              {formatNumber(row.differenceQuantity)}
+            </td>
+            <td
+              className="px-3 py-3 text-right font-black"
+              style={{ color: row.quantityAccuracyStyle.text }}
+            >
+              {formatPercent(row.quantityAccuracy)}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </AbcTableShell>
+  );
+}
+
+function AbcValueTable({ rows }: { rows: AbcBreakdownRow[] }) {
+  return (
+    <AbcTableShell
+      title="COGS value view"
+      description="The same class capture measured at unit cost excluding GST."
+    >
+      <thead className="bg-emerald-50 text-xs uppercase tracking-wide text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">
+        <tr>
+          <th className="px-3 py-3 text-left">Class</th>
+          <th className="px-3 py-3 text-right">Costed SKUs</th>
+          <th className="px-3 py-3 text-right">System Value</th>
+          <th className="px-3 py-3 text-right">Physical Value</th>
+          <th className="px-3 py-3 text-right">Difference</th>
+          <th className="px-3 py-3 text-right">Accuracy</th>
+          <th className="px-3 py-3 text-right">Coverage</th>
+        </tr>
+      </thead>
+      <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+        {rows.map((row) => (
+          <tr
+            key={row.abcClass}
+            className={
+              row.abcClass === 'Total'
+                ? 'bg-slate-50 font-bold dark:bg-slate-950'
+                : ''
+            }
+          >
+            <td className="px-3 py-3">
+              <AbcClassLabel row={row} />
+            </td>
+            <td className="px-3 py-3 text-right">
+              {formatNumber(row.costedSkuCount)}
+            </td>
+            <td className="px-3 py-3 text-right">
+              {formatCurrency(row.systemValue)}
+            </td>
+            <td className="px-3 py-3 text-right">
+              {formatCurrency(row.physicalValue)}
+            </td>
+            <td className="px-3 py-3 text-right">
+              {formatCurrency(row.differenceValue)}
+            </td>
+            <td
+              className="px-3 py-3 text-right font-black"
+              style={{ color: row.valueAccuracyStyle.text }}
+            >
+              {formatPercent(row.valueAccuracy)}
+            </td>
+            <td className="px-3 py-3 text-right">
+              {formatPercent(row.costCoverage)}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </AbcTableShell>
+  );
+}
+
+function AbcTableShell({
+  title,
+  description,
+  children
+}: {
+  title: string;
+  description: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="min-w-0 overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800">
+      <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-800">
+        <h4 className="font-bold text-slate-950 dark:text-white">
+          {title}
+        </h4>
+        <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+          {description}
+        </p>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="min-w-full whitespace-nowrap text-sm">
+          {children}
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function ValueAccuracyBanner({
-  periods
+  periods,
+  selectedPeriod,
+  onSelectPeriod
 }: {
   periods: Record<PeriodKey, PeriodData>;
+  selectedPeriod: PeriodKey | null;
+  onSelectPeriod: (periodKey: PeriodKey) => void;
 }) {
   return (
     <section className="mt-4 overflow-hidden rounded-3xl border border-emerald-200 bg-emerald-50/70 p-5 shadow-sm dark:border-emerald-900 dark:bg-emerald-950/20 sm:p-6">
@@ -418,10 +680,19 @@ function ValueAccuracyBanner({
           const style =
             period.kpis.valueAccuracyStyle ||
             getAccuracyStyle(valueAccuracy);
+          const isSelected = selectedPeriod === periodKey;
           return (
-            <article
+            <button
+              type="button"
               key={periodKey}
-              className="rounded-2xl border border-emerald-100 bg-white p-4 shadow-sm dark:border-emerald-900"
+              aria-expanded={isSelected}
+              aria-controls="abc-breakdown-panel"
+              onClick={() => onSelectPeriod(periodKey)}
+              className={`rounded-2xl border bg-white p-4 text-left shadow-sm transition focus:outline-none focus:ring-4 focus:ring-emerald-300/50 dark:border-emerald-900 ${
+                isSelected
+                  ? 'border-emerald-400 ring-4 ring-emerald-300/30'
+                  : 'border-emerald-100 hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow-md'
+              }`}
             >
               <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
                 {period.label}
@@ -450,7 +721,16 @@ function ValueAccuracyBanner({
                 className="mt-3 block h-1.5 rounded-full"
                 style={{ backgroundColor: style.indicator }}
               />
-            </article>
+              <span className="mt-3 flex items-center justify-between text-xs font-bold text-emerald-700">
+                {isSelected ? 'Hide ABC details' : 'View ABC details'}
+                <ChevronDown
+                  aria-hidden="true"
+                  className={`h-4 w-4 transition-transform ${
+                    isSelected ? 'rotate-180' : ''
+                  }`}
+                />
+              </span>
+            </button>
           );
         })}
       </div>
@@ -599,6 +879,8 @@ export default function App() {
   const [tableSortDirection, setTableSortDirection] =
     useState<'asc' | 'desc'>('desc');
   const [isExportingCsv, setIsExportingCsv] = useState(false);
+  const [selectedAbcPeriod, setSelectedAbcPeriod] =
+    useState<PeriodKey | null>(null);
   const debouncedTableSearch = useDebouncedValue(tableSearch, 400);
 
   const configQuery = useQuery({
@@ -698,6 +980,10 @@ export default function App() {
   const bannerPeriods = filters.facility
     ? facilityDashboardQuery.data?.data.periods || dashboard?.periods
     : dashboard?.periods;
+  const selectedAbcPeriodData =
+    selectedAbcPeriod && bannerPeriods
+      ? bannerPeriods[selectedAbcPeriod]
+      : null;
 
   const activityQuery = useQuery({
     queryKey: ['activityStatus', filters.date],
@@ -923,10 +1209,28 @@ export default function App() {
           <main className="mx-auto max-w-[1600px] px-4 py-8 sm:px-6 lg:px-8">
             <QuantityAccuracyBanner
               periods={bannerPeriods || dashboard.periods}
+              selectedPeriod={selectedAbcPeriod}
+              onSelectPeriod={(periodKey) => {
+                setSelectedAbcPeriod((current) =>
+                  current === periodKey ? null : periodKey
+                );
+              }}
             />
             <ValueAccuracyBanner
               periods={bannerPeriods || dashboard.periods}
+              selectedPeriod={selectedAbcPeriod}
+              onSelectPeriod={(periodKey) => {
+                setSelectedAbcPeriod((current) =>
+                  current === periodKey ? null : periodKey
+                );
+              }}
             />
+            {selectedAbcPeriodData ? (
+              <AbcBreakdownPanel
+                period={selectedAbcPeriodData}
+                breakdown={selectedAbcPeriodData.abcBreakdown}
+              />
+            ) : null}
             <YesterdayActivityNotice
               period={dashboard.periods.yesterday}
             />

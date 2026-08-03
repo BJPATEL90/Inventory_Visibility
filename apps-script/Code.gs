@@ -47,6 +47,7 @@ const INVENTORY_HEADERS = [
 ];
 
 const COST_SHEET_NAME = 'COGS';
+const SKU_MASTER_SHEET_NAME = 'SKU_Master';
 const HISTORICAL_SHEET_NAME = 'Q1-AMJ26';
 const HISTORICAL_START_DATE = '2026-04-01';
 const HISTORICAL_END_DATE = '2026-06-30';
@@ -105,7 +106,7 @@ const ACTIVITY_REASONS = [
 ];
 
 const DASHBOARD_CACHE_KEY =
-  'inventory_dashboard_v4_ntf_as_shortage_v1';
+  'inventory_dashboard_v5_abc_breakdown_v1';
 const LAST_REFRESH_PROPERTY = 'INVENTORY_LAST_REFRESH_TIME';
 const LAST_EMAIL_SENT_PROPERTY = 'INVENTORY_LAST_EMAIL_SENT_TIME';
 const REFRESH_HANDLER = 'refreshDashboardCache';
@@ -287,11 +288,16 @@ function getConfig() {
  * The live source sheets use "Diff." while the requested logical name is
  * "Diff". Header matching ignores case, extra spaces, and periods so both work.
  */
-function getCombinedData(optionalSpreadsheet, optionalCostMap) {
+function getCombinedData(
+  optionalSpreadsheet,
+  optionalCostMap,
+  optionalAbcClassMap
+) {
   const spreadsheet =
     optionalSpreadsheet || SpreadsheetApp.openById(SPREADSHEET_ID);
   const combinedRows = [];
   const costMap = optionalCostMap || readCostMap_(spreadsheet);
+  const abcClassMap = optionalAbcClassMap || {};
   const timeZone = getTimeZone_();
 
   SOURCE_SHEETS.forEach(function (sheetName) {
@@ -327,6 +333,9 @@ function getCombinedData(optionalSpreadsheet, optionalCostMap) {
           ? costMap[normalizedSku]
           : null;
       const unitCost = costRecord ? costRecord.unitCost : null;
+      const abcClass = normalizedSku && abcClassMap[normalizedSku]
+        ? abcClassMap[normalizedSku]
+        : 'Unclassified';
 
       combinedRows.push(normalizeNtfShortage_({
         id: sheetName + '-' + String(rowIndex + 1),
@@ -335,6 +344,7 @@ function getCombinedData(optionalSpreadsheet, optionalCostMap) {
         date: normalizeDate_(row[indexes['Date']], timeZone),
         rack: cleanText_(row[indexes['Rack']]),
         skuCode: skuCode,
+        abcClass: abcClass,
         itemName: cleanText_(row[indexes['Item Name']]),
         shelf: cleanText_(row[indexes['Shelf']]),
         batch: cleanText_(row[indexes['Batch']]),
@@ -374,10 +384,15 @@ function getCombinedData(optionalSpreadsheet, optionalCostMap) {
  * transaction filtering. The sheet's own Cogs/Unit is preferred so historical
  * values do not change when the current COGS master is updated.
  */
-function getHistoricalData(optionalSpreadsheet, optionalCostMap) {
+function getHistoricalData(
+  optionalSpreadsheet,
+  optionalCostMap,
+  optionalAbcClassMap
+) {
   const spreadsheet =
     optionalSpreadsheet || SpreadsheetApp.openById(SPREADSHEET_ID);
   const costMap = optionalCostMap || readCostMap_(spreadsheet);
+  const abcClassMap = optionalAbcClassMap || {};
   const sheet = findSheetIgnoreCase_(
     spreadsheet,
     HISTORICAL_SHEET_NAME
@@ -419,6 +434,9 @@ function getHistoricalData(optionalSpreadsheet, optionalCostMap) {
       : currentCostRecord
         ? currentCostRecord.unitCost
         : null;
+    const abcClass = normalizedSku && abcClassMap[normalizedSku]
+      ? abcClassMap[normalizedSku]
+      : 'Unclassified';
     const physicalQuantity = toNumber_(row[indexes['Phy']]);
     const systemQuantity = toNumber_(row[indexes['Sys']]);
     const rawDifference = row[indexes['Diff.']];
@@ -433,6 +451,7 @@ function getHistoricalData(optionalSpreadsheet, optionalCostMap) {
       date: normalizeDate_(row[indexes['Date']], timeZone),
       rack: cleanText_(row[indexes['Rack']]),
       skuCode: skuCode,
+      abcClass: abcClass,
       itemName: cleanText_(row[indexes['Item Name']]),
       shelf: cleanText_(row[indexes['Shelf']]),
       batch: cleanText_(row[indexes['Batch']]),
@@ -470,13 +489,23 @@ function getHistoricalData(optionalSpreadsheet, optionalCostMap) {
 function getAllInventoryData_() {
   const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
   const costMap = readCostMap_(spreadsheet);
-  const currentRows = getCombinedData(spreadsheet, costMap);
-  const historicalRows = getHistoricalData(spreadsheet, costMap);
+  const abcClassMap = readAbcClassMap_(spreadsheet);
+  const currentRows = getCombinedData(
+    spreadsheet,
+    costMap,
+    abcClassMap
+  );
+  const historicalRows = getHistoricalData(
+    spreadsheet,
+    costMap,
+    abcClassMap
+  );
 
   return {
     currentRows: currentRows,
     historicalRows: historicalRows,
-    allRows: currentRows.concat(historicalRows)
+    allRows: currentRows.concat(historicalRows),
+    abcClassMap: abcClassMap
   };
 }
 
@@ -931,16 +960,98 @@ function getBinMaster() {
  * Returns the SKU_MASTER sheet as read-only API rows.
  *
  * Expected sheet columns:
- * SKU, Item Name, Brand, Category, Pack Size
+ * SKU, Item Name, Brand, Category, Pack Size, ABC Class
  *
  * Sheet-name matching is case-insensitive so SKU_MASTER and SKU_Master work.
  */
 function getSkuMaster() {
   return readMasterSheet_(
-    'SKU_Master',
-    ['SKU', 'Item Name', 'Brand', 'Category', 'Pack Size'],
-    ['sku', 'itemName', 'brand', 'category', 'packSize']
+    SKU_MASTER_SHEET_NAME,
+    [
+      'SKU',
+      'Item Name',
+      'Brand',
+      'Category',
+      'Pack Size',
+      'ABC Class'
+    ],
+    [
+      'sku',
+      'itemName',
+      'brand',
+      'category',
+      'packSize',
+      'abcClass'
+    ]
   );
+}
+
+/**
+ * Calculates ABC-class quantity and COGS summaries for one reporting period.
+ *
+ * SKU_MASTER supplies A, B, or C by SKU. Missing or invalid mappings are kept
+ * in Unclassified so no inventory is silently omitted. Quantity accuracy uses
+ * absolute quantity difference. Value accuracy uses absolute difference value
+ * for rows that have a valid COGS rate excluding GST.
+ */
+function calculateAbcBreakdown(inventoryRows) {
+  const rows = Array.isArray(inventoryRows) ? inventoryRows : [];
+  const classOrder = ['A', 'B', 'C', 'Unclassified'];
+  const buckets = {};
+
+  classOrder.forEach(function (abcClass) {
+    buckets[abcClass] = newAbcBucket_(abcClass);
+  });
+
+  rows.forEach(function (row) {
+    const abcClass = normalizeAbcClass_(row.abcClass);
+    const bucket = buckets[abcClass];
+    const sku = normalizeSku_(row.skuCode);
+    const systemQuantity = toNumber_(row.systemQuantity);
+    const physicalQuantity = isNtfRow_(row)
+      ? 0
+      : toNumber_(row.physicalQuantity);
+    const difference = isNtfRow_(row)
+      ? 0 - systemQuantity
+      : toNumber_(row.difference);
+    const unitCost = optionalNumber_(row.unitCost);
+
+    if (sku) {
+      bucket.skus[sku] = true;
+    }
+
+    bucket.rowCount += 1;
+    bucket.systemQuantity += systemQuantity;
+    bucket.physicalQuantity += physicalQuantity;
+    bucket.absoluteDifference += Math.abs(difference);
+
+    if (unitCost !== null && unitCost >= 0) {
+      bucket.costedRowCount += 1;
+      if (sku) {
+        bucket.costedSkus[sku] = true;
+      }
+      bucket.systemValue += systemQuantity * unitCost;
+      bucket.physicalValue += physicalQuantity * unitCost;
+      bucket.absoluteDifferenceValue += Math.abs(difference) * unitCost;
+    }
+  });
+
+  const classRows = classOrder.map(function (abcClass) {
+    return finishAbcBucket_(buckets[abcClass]);
+  });
+  const totalBucket = newAbcBucket_('Total');
+
+  classOrder.forEach(function (abcClass) {
+    mergeAbcBucket_(totalBucket, buckets[abcClass]);
+  });
+
+  return {
+    classes: classRows,
+    total: finishAbcBucket_(totalBucket),
+    mappedSkuCount: countMappedAbcSkus_(classRows),
+    unclassifiedSkuCount:
+      classRows[classRows.length - 1].uniqueSkuCount
+  };
 }
 
 /**
@@ -1669,6 +1780,81 @@ function testPaginatedTransactions() {
 }
 
 /**
+ * Tests ABC quantity and COGS calculations without reading or changing sheets.
+ *
+ * Expected sample result:
+ * - A: system 30, physical 30, quantity accuracy 100%
+ * - B: system 50, physical 47, difference -3, quantity accuracy 94%
+ * - C: system 20, physical 20, quantity accuracy 100%
+ * - Total: system 100, physical 97, quantity accuracy 97%
+ */
+function testAbcBreakdownCalculations() {
+  const sampleRows = [
+    {
+      skuCode: 'A-SKU',
+      abcClass: 'A',
+      rack: 'R1',
+      systemQuantity: 30,
+      physicalQuantity: 30,
+      difference: 0,
+      unitCost: 10,
+      remark: ''
+    },
+    {
+      skuCode: 'B-SKU',
+      abcClass: 'B',
+      rack: 'R2',
+      systemQuantity: 50,
+      physicalQuantity: 47,
+      difference: -3,
+      unitCost: 20,
+      remark: ''
+    },
+    {
+      skuCode: 'C-SKU',
+      abcClass: 'C',
+      rack: 'R3',
+      systemQuantity: 20,
+      physicalQuantity: 20,
+      difference: 0,
+      unitCost: 5,
+      remark: ''
+    },
+    {
+      skuCode: 'NO-CLASS',
+      abcClass: '',
+      rack: 'R4',
+      systemQuantity: 5,
+      physicalQuantity: 5,
+      difference: 0,
+      unitCost: null,
+      remark: ''
+    }
+  ];
+  const result = calculateAbcBreakdown(sampleRows);
+  const bClass = result.classes[1];
+
+  assertEqual_(bClass.differenceQuantity, -3, 'B difference quantity');
+  assertEqual_(bClass.quantityAccuracy, 94, 'B quantity accuracy');
+  assertEqual_(bClass.differenceValue, -60, 'B difference value');
+  assertEqual_(bClass.valueAccuracy, 94, 'B value accuracy');
+  assertEqual_(result.total.systemQuantity, 105, 'Total system quantity');
+  assertEqual_(result.total.physicalQuantity, 102, 'Total physical quantity');
+  assertEqual_(result.unclassifiedSkuCount, 1, 'Unclassified SKU count');
+
+  const output = {
+    passed: true,
+    classes: result.classes,
+    total: result.total,
+    mappedSkuCount: result.mappedSkuCount,
+    unclassifiedSkuCount: result.unclassifiedSkuCount
+  };
+
+  console.log(JSON.stringify(output, null, 2));
+  return output;
+}
+
+/**
  * Creates the quarter-to-date CSV attached to the inventory email.
  *
  * The quarter is based on the email's reporting date. For example, an email
@@ -2126,6 +2312,7 @@ function buildDashboard_(optionalInventoryData, optionalFilters) {
         endDate: range.endDate,
         config: config
       }),
+      abcBreakdown: calculateAbcBreakdown(periodRows),
       zeroActivity: periodRows.length === 0
         ? zeroActivityMessage_(range)
         : null
@@ -2860,6 +3047,150 @@ function readCostMap_(spreadsheet) {
   }
 
   return costMap;
+}
+
+/**
+ * Reads SKU_MASTER into a SKU-to-ABC-class map without changing the sheet.
+ *
+ * The dashboard remains available while the new column is being prepared. If
+ * SKU_MASTER or ABC Class is missing, an empty map is returned and inventory
+ * is reported under Unclassified.
+ */
+function readAbcClassMap_(spreadsheet) {
+  const sheet = findSheetIgnoreCase_(
+    spreadsheet,
+    SKU_MASTER_SHEET_NAME
+  );
+  const abcClassMap = {};
+
+  if (!sheet || sheet.getLastRow() <= 1 || sheet.getLastColumn() === 0) {
+    return abcClassMap;
+  }
+
+  const values = sheet
+    .getRange(1, 1, sheet.getLastRow(), sheet.getLastColumn())
+    .getDisplayValues();
+  const normalizedHeaders = values[0].map(normalizeHeader_);
+  const skuIndex = normalizedHeaders.indexOf(normalizeHeader_('SKU'));
+  const abcClassIndex = normalizedHeaders.indexOf(
+    normalizeHeader_('ABC Class')
+  );
+
+  if (skuIndex < 0 || abcClassIndex < 0) {
+    console.warn(
+      'SKU_MASTER needs SKU and ABC Class columns. ' +
+        'All SKUs are currently Unclassified.'
+    );
+    return abcClassMap;
+  }
+
+  for (let rowIndex = 1; rowIndex < values.length; rowIndex += 1) {
+    const sku = normalizeSku_(values[rowIndex][skuIndex]);
+    const enteredClass = cleanText_(values[rowIndex][abcClassIndex])
+      .toUpperCase();
+
+    if (
+      sku &&
+      ['A', 'B', 'C'].indexOf(enteredClass) >= 0 &&
+      !Object.prototype.hasOwnProperty.call(abcClassMap, sku)
+    ) {
+      abcClassMap[sku] = enteredClass;
+    }
+  }
+
+  return abcClassMap;
+}
+
+/** Creates an internal accumulator for one ABC class. */
+function newAbcBucket_(abcClass) {
+  return {
+    abcClass: abcClass,
+    skus: {},
+    costedSkus: {},
+    rowCount: 0,
+    costedRowCount: 0,
+    systemQuantity: 0,
+    physicalQuantity: 0,
+    absoluteDifference: 0,
+    systemValue: 0,
+    physicalValue: 0,
+    absoluteDifferenceValue: 0
+  };
+}
+
+/** Adds one ABC accumulator into another, including unique SKU sets. */
+function mergeAbcBucket_(target, source) {
+  Object.keys(source.skus).forEach(function (sku) {
+    target.skus[sku] = true;
+  });
+  Object.keys(source.costedSkus).forEach(function (sku) {
+    target.costedSkus[sku] = true;
+  });
+  target.rowCount += source.rowCount;
+  target.costedRowCount += source.costedRowCount;
+  target.systemQuantity += source.systemQuantity;
+  target.physicalQuantity += source.physicalQuantity;
+  target.absoluteDifference += source.absoluteDifference;
+  target.systemValue += source.systemValue;
+  target.physicalValue += source.physicalValue;
+  target.absoluteDifferenceValue += source.absoluteDifferenceValue;
+}
+
+/** Converts an internal ABC accumulator into the small API response row. */
+function finishAbcBucket_(bucket) {
+  const quantityAccuracy = bucket.systemQuantity === 0
+    ? 0
+    : 100 -
+      (bucket.absoluteDifference / bucket.systemQuantity) * 100;
+  const valueAccuracy = bucket.systemValue === 0
+    ? 0
+    : 100 -
+      (bucket.absoluteDifferenceValue / bucket.systemValue) * 100;
+  const costCoverage = bucket.rowCount === 0
+    ? 0
+    : (bucket.costedRowCount / bucket.rowCount) * 100;
+
+  return {
+    abcClass: bucket.abcClass,
+    uniqueSkuCount: Object.keys(bucket.skus).length,
+    costedSkuCount: Object.keys(bucket.costedSkus).length,
+    rowCount: bucket.rowCount,
+    costedRowCount: bucket.costedRowCount,
+    systemQuantity: round_(bucket.systemQuantity, 2),
+    physicalQuantity: round_(bucket.physicalQuantity, 2),
+    differenceQuantity: round_(
+      bucket.physicalQuantity - bucket.systemQuantity,
+      2
+    ),
+    quantityAccuracy: round_(quantityAccuracy, 2),
+    quantityAccuracyStyle: getAccuracyStyle(quantityAccuracy),
+    systemValue: round_(bucket.systemValue, 2),
+    physicalValue: round_(bucket.physicalValue, 2),
+    differenceValue: round_(
+      bucket.physicalValue - bucket.systemValue,
+      2
+    ),
+    valueAccuracy: round_(valueAccuracy, 2),
+    valueAccuracyStyle: getAccuracyStyle(valueAccuracy),
+    costCoverage: round_(costCoverage, 2)
+  };
+}
+
+/** Returns A, B, and C unique SKU count without Unclassified. */
+function countMappedAbcSkus_(classRows) {
+  return classRows.reduce(function (total, row) {
+    return row.abcClass === 'Unclassified'
+      ? total
+      : total + row.uniqueSkuCount;
+  }, 0);
+}
+
+/** Keeps only A, B, and C; every other value remains visible as Unclassified. */
+function normalizeAbcClass_(value) {
+  const abcClass = cleanText_(value).toUpperCase();
+  return ['A', 'B', 'C'].indexOf(abcClass) >= 0
+    ? abcClass
+    : 'Unclassified';
 }
 
 /**

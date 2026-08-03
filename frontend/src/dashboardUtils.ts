@@ -1,6 +1,5 @@
 import type {
   AccuracyStyle,
-  DashboardChartData,
   DashboardFilters,
   FilterOptions,
   InventoryTransaction,
@@ -203,72 +202,6 @@ export function isNtfTransaction(row: InventoryTransaction) {
   );
 }
 
-export function calculateCharts(
-  rows: InventoryTransaction[]
-): DashboardChartData {
-  const rowsByDate = new Map<string, InventoryTransaction[]>();
-  const rowsByFacility = new Map<string, InventoryTransaction[]>();
-
-  rows.forEach((row) => {
-    if (row.date) {
-      const dateRows = rowsByDate.get(row.date) || [];
-      dateRows.push(row);
-      rowsByDate.set(row.date, dateRows);
-    }
-
-    if (row.facility) {
-      const facilityRows = rowsByFacility.get(row.facility) || [];
-      facilityRows.push(row);
-      rowsByFacility.set(row.facility, facilityRows);
-    }
-  });
-
-  const dates = Array.from(rowsByDate.keys()).sort();
-  const facilities = Array.from(rowsByFacility.keys()).sort((first, second) =>
-    first.localeCompare(second, undefined, {
-      numeric: true,
-      sensitivity: 'base'
-    })
-  );
-  const inventoryAccuracyValues = dates.map((date) =>
-    inventoryAccuracyForRows(rowsByDate.get(date) || [])
-  );
-
-  return {
-    inventoryAccuracyTrend: {
-      categories: dates,
-      values: inventoryAccuracyValues,
-      pointColors: inventoryAccuracyValues.map(
-        (value) => getAccuracyStyle(value).indicator
-      )
-    },
-    binAccuracyTrend: {
-      categories: dates,
-      values: dates.map((date) =>
-        binAccuracyForRows(rowsByDate.get(date) || [])
-      )
-    },
-    facilityInventoryAccuracy: {
-      categories: facilities,
-      values: facilities.map((facility) =>
-        inventoryAccuracyForRows(rowsByFacility.get(facility) || [])
-      ),
-      pointColors: facilities.map((facility) =>
-        getAccuracyStyle(
-          inventoryAccuracyForRows(rowsByFacility.get(facility) || [])
-        ).indicator
-      )
-    },
-    ntfTrend: {
-      categories: dates,
-      values: dates.map(
-        (date) =>
-          (rowsByDate.get(date) || []).filter(isNtfTransaction).length
-      )
-    }
-  };
-}
-
 export function getAccuracyStyle(value: number): AccuracyStyle {
   if (value < 96) {
     return {
@@ -294,57 +227,6 @@ export function getAccuracyStyle(value: number): AccuracyStyle {
     background: '#dcfce7',
     indicator: '#16a34a'
   };
-}
-
-function inventoryAccuracyForRows(rows: InventoryTransaction[]) {
-  const systemQuantity = rows.reduce(
-    (total, row) => total + row.systemQuantity,
-    0
-  );
-  const absoluteDifference = rows.reduce(
-    (total, row) => {
-      const difference = isNtfTransaction(row)
-        ? 0 - row.systemQuantity
-        : row.difference;
-      return total + Math.abs(difference);
-    },
-    0
-  );
-
-  return round(
-    systemQuantity === 0
-      ? 0
-      : 100 - (absoluteDifference / systemQuantity) * 100
-  );
-}
-
-function binAccuracyForRows(rows: InventoryTransaction[]) {
-  const binDifferences = new Map<string, number>();
-
-  rows.forEach((row) => {
-    if (!row.rack && !row.shelf) {
-      return;
-    }
-
-    const key = [row.facility, row.rack, row.shelf].join('||');
-    const difference = isNtfTransaction(row)
-      ? 0 - row.systemQuantity
-      : row.difference;
-    binDifferences.set(
-      key,
-      (binDifferences.get(key) || 0) + difference
-    );
-  });
-
-  if (binDifferences.size === 0) {
-    return 0;
-  }
-
-  const accurateBins = Array.from(binDifferences.values()).filter(
-    (difference) => Math.abs(difference) < 0.000001
-  ).length;
-
-  return round((accurateBins / binDifferences.size) * 100);
 }
 
 function uniqueSorted(values: string[]) {

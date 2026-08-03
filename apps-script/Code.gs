@@ -510,7 +510,7 @@ function getAllInventoryData_() {
 }
 
 /**
- * Returns one small, server-side page of transactions plus KPI/chart summaries.
+ * Returns one small, server-side page of transactions plus its KPI summary.
  *
  * Supported parameters:
  * startDate, endDate, facility, page, pageSize, search, sortKey,
@@ -582,8 +582,7 @@ function buildTransactionsResponse_(parameters, optionalInventoryData) {
       startDate: selection.startDate,
       endDate: selection.endDate,
       config: selection.config
-    }),
-    charts: calculateCharts(selection.selectedRows)
+    })
   };
 }
 
@@ -1747,7 +1746,7 @@ function testEmailPreview() {
 /**
  * Tests the small Month-to-Date transaction response without changing sheets.
  *
- * The log confirms pagination, KPI/chart summaries, and the first response
+ * The log confirms pagination, KPI summary, and the first response
  * size. Run this after deployment when checking dashboard loading performance.
  */
 function testPaginatedTransactions() {
@@ -1771,7 +1770,6 @@ function testPaginatedTransactions() {
     pageSize: result.pageSize,
     pageCount: result.pageCount,
     facilityCount: result.facilities.length,
-    chartDateCount: result.charts.inventoryAccuracyTrend.categories.length,
     responseBytes: JSON.stringify(result).length
   };
 

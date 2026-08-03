@@ -4,7 +4,7 @@ A small inventory reporting application built with:
 
 - Google Sheets as the database
 - Google Apps Script as the cloud backend
-- React, TypeScript, Vite, Tailwind CSS, ApexCharts, React Query, and Lucide icons
+- React, TypeScript, Vite, Tailwind CSS, React Query, and Lucide icons
 - GitHub Pages for frontend hosting
 
 Published dashboard: [Inventory Health Dashboard](https://bjpatel90.github.io/Inventory_Visibility/)
@@ -19,7 +19,7 @@ emails even when the user's laptop is switched off.
 
 The current frontend contains two visible sections:
 
-1. **KPI and charts**
+1. **KPI and ABC Class details**
 2. **Inventory Transactions**, including search, sorting, pagination, and CSV
    download
 
@@ -32,7 +32,7 @@ The filter bar currently contains only:
 - Facility
 - Clear filters
 
-The Date filter changes the detailed KPI cards, charts, and transaction table
+The Date filter changes the detailed KPI cards and transaction table
 for the selected day. The Facility filter limits the same details and
 recalculates the four-period comparison for that facility.
 
@@ -95,15 +95,6 @@ The detailed cards show:
 
 Negative quantities and values are displayed in parentheses.
 
-### Charts
-
-Only these four charts are included:
-
-- Inventory Accuracy Trend
-- Bin Accuracy Trend
-- Facility-Wise Inventory Accuracy
-- NTF Trend
-
 ### Daily email
 
 The daily email reports Yesterday's detailed KPIs and also includes both
@@ -136,7 +127,6 @@ Inventory_Visibility/
 |   |   |-- main.tsx
 |   |   |-- types.ts
 |   |   `-- components/
-|   |       |-- DashboardChart.tsx
 |   |       |-- FilterBar.tsx
 |   |       |-- InventoryTable.tsx
 |   |       |-- KpiCard.tsx
@@ -427,7 +417,7 @@ Run these functions one at a time:
 | `testQuarterData()` | `Q1-AMJ26`, historical date range, and four periods | No |
 | `testMasters()` | Bin and SKU master APIs | No |
 | `testEmailPreview()` | Email model, HTML, and quarter CSV without sending | No |
-| `testPaginatedTransactions()` | Small MTD transaction page, KPI/chart summaries, and response size | No |
+| `testPaginatedTransactions()` | Small MTD transaction page, KPI summary, and response size | No |
 | `testAbcBreakdownCalculations()` | ABC quantity and COGS formulas, negative difference, and Unclassified handling | No |
 
 For each test:
@@ -497,7 +487,7 @@ A successful response has this structure:
 The `data` shape depends on the action.
 
 The `transactions` action is server-side paginated. It returns only the
-requested page together with the KPI totals, four chart datasets, row counts,
+requested page together with the KPI totals, row counts,
 and Facility options for the selected date range. This prevents the browser
 from downloading all current and historical rows during startup. The default
 Month-to-Date page is also prewarmed by `refreshDashboardCache` and small page
@@ -797,7 +787,7 @@ accuracy:
 ## Frontend
 
 - [ ] Confirm only Date and Facility appear in the filter bar.
-- [ ] Select a current date and confirm KPI cards, charts, and transactions
+- [ ] Select a current date and confirm KPI cards and transactions
   change.
 - [ ] Select a date from `Q1-AMJ26` and confirm historical rows appear.
 - [ ] Select a Facility and confirm the detailed results and period ribbons
@@ -813,7 +803,7 @@ accuracy:
 - [ ] Test column sorting.
 - [ ] Test pagination and page size.
 - [ ] Export CSV and confirm it contains the filtered and searched rows.
-- [ ] Confirm the four required charts are visible.
+- [ ] Confirm the Dashboard Charts section is not displayed.
 - [ ] Test light and dark mode.
 - [ ] Test on desktop and a phone-sized screen.
 

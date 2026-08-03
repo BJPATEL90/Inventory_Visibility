@@ -196,7 +196,6 @@ export interface TransactionPageData {
   facility: string;
   facilities: string[];
   kpis: Kpis;
-  charts: DashboardChartData;
 }
 
 export interface ActivityStatus {
@@ -236,17 +235,4 @@ export interface FilterOptions {
   skus: string[];
   batches: string[];
   remarks: string[];
-}
-
-export interface ChartDataset {
-  categories: string[];
-  values: number[];
-  pointColors?: string[];
-}
-
-export interface DashboardChartData {
-  inventoryAccuracyTrend: ChartDataset;
-  binAccuracyTrend: ChartDataset;
-  facilityInventoryAccuracy: ChartDataset;
-  ntfTrend: ChartDataset;
 }

@@ -27,7 +27,6 @@ import {
   getTransactions
 } from './api';
 import { FilterBar } from './components/FilterBar';
-import { DashboardChart } from './components/DashboardChart';
 import { InventoryTable } from './components/InventoryTable';
 import { KpiCard } from './components/KpiCard';
 import {
@@ -269,7 +268,7 @@ function SectionNavigation() {
     {
       href: '#kpi-section',
       label: '1. KPI',
-      description: 'Accuracy, cards and charts',
+      description: 'Accuracy cards and ABC details',
       icon: Gauge
     },
     {
@@ -423,7 +422,7 @@ function AbcBreakdownPanel({
     return (
       <section
         id="abc-breakdown-panel"
-        className="mt-4 rounded-2xl border border-amber-300 bg-amber-50 p-5 text-sm text-amber-900 shadow-sm"
+        className="mt-4 scroll-mt-24 rounded-2xl border border-amber-300 bg-amber-50 p-5 text-sm text-amber-900 shadow-sm"
       >
         ABC details are not available in the current cached response. Refresh
         the dashboard after the Apps Script deployment is updated.
@@ -436,7 +435,7 @@ function AbcBreakdownPanel({
   return (
     <section
       id="abc-breakdown-panel"
-      className="mt-4 rounded-3xl border border-blue-200 bg-white p-5 shadow-sm dark:border-blue-900 dark:bg-slate-900 sm:p-6"
+      className="mt-4 scroll-mt-24 rounded-3xl border border-blue-200 bg-white p-5 shadow-sm dark:border-blue-900 dark:bg-slate-900 sm:p-6"
     >
       <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div>
@@ -975,7 +974,6 @@ export default function App() {
     remarks: []
   };
   const visibleKpis = transactionPage?.kpis || null;
-  const chartData = transactionPage?.charts || null;
   const selectedRowCount = transactionPage?.selectedRowCount || 0;
   const bannerPeriods = filters.facility
     ? facilityDashboardQuery.data?.data.periods || dashboard?.periods
@@ -1013,6 +1011,21 @@ export default function App() {
       setThemeInitialized(true);
     }
   }, [config, themeInitialized]);
+
+  useEffect(() => {
+    if (!selectedAbcPeriod) {
+      return;
+    }
+
+    const animationFrame = window.requestAnimationFrame(() => {
+      document.getElementById('abc-breakdown-panel')?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start'
+      });
+    });
+
+    return () => window.cancelAnimationFrame(animationFrame);
+  }, [selectedAbcPeriod]);
 
   const isLoading =
     configQuery.isLoading ||
@@ -1268,8 +1281,8 @@ export default function App() {
                   Loading selected-period details
                 </h3>
                 <p className="mx-auto mt-2 max-w-2xl text-sm leading-6 text-blue-800 dark:text-blue-300">
-                  The KPI banners are ready. Transaction details and charts are
-                  being calculated in the background.
+                  The KPI banners are ready. Transaction details are being
+                  calculated in the background.
                 </p>
               </div>
             ) : transactionErrorMessage ? (
@@ -1303,84 +1316,8 @@ export default function App() {
                     : emptyMessage}
                 </p>
               </div>
-            ) : visibleKpis && chartData ? (
-              <>
-                <KpiGrid kpis={visibleKpis} />
-
-                <section className="mt-10">
-                  <div className="mb-5">
-                    <p className="text-sm font-semibold text-blue-700 dark:text-blue-300">
-                      Inventory performance
-                    </p>
-                    <h2 className="mt-1 text-2xl font-bold tracking-tight">
-                      Dashboard Charts
-                    </h2>
-                    <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                      Charts follow the Date and other dashboard filters.
-                    </p>
-                  </div>
-
-                  <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
-                    <DashboardChart
-                      title="Inventory Accuracy Trend"
-                      subtitle="Daily inventory accuracy for the current selection."
-                      seriesName="Inventory Accuracy"
-                      categories={
-                        chartData.inventoryAccuracyTrend.categories
-                      }
-                      values={chartData.inventoryAccuracyTrend.values}
-                      pointColors={
-                        chartData.inventoryAccuracyTrend.pointColors
-                      }
-                      type="line"
-                      unit="percent"
-                      darkMode={darkMode}
-                      color="#2563eb"
-                    />
-                    <DashboardChart
-                      title="Bin Accuracy Trend"
-                      subtitle="Daily accurate-bin percentage for the current selection."
-                      seriesName="Bin Accuracy"
-                      categories={chartData.binAccuracyTrend.categories}
-                      values={chartData.binAccuracyTrend.values}
-                      type="line"
-                      unit="percent"
-                      darkMode={darkMode}
-                      color="#7c3aed"
-                    />
-                    <DashboardChart
-                      title="Facility-Wise Inventory Accuracy"
-                      subtitle="Inventory accuracy comparison across facilities."
-                      seriesName="Inventory Accuracy"
-                      categories={
-                        chartData.facilityInventoryAccuracy.categories
-                      }
-                      values={
-                        chartData.facilityInventoryAccuracy.values
-                      }
-                      pointColors={
-                        chartData.facilityInventoryAccuracy.pointColors
-                      }
-                      type="bar"
-                      unit="percent"
-                      darkMode={darkMode}
-                      color="#2563eb"
-                    />
-                    <DashboardChart
-                      title="NTF Trend"
-                      subtitle="Daily count of rows with NTF in Rack, Shelf, or Remark."
-                      seriesName="NTF Count"
-                      categories={chartData.ntfTrend.categories}
-                      values={chartData.ntfTrend.values}
-                      type="line"
-                      unit="count"
-                      darkMode={darkMode}
-                      color="#ea580c"
-                    />
-                  </div>
-                </section>
-
-              </>
+            ) : visibleKpis ? (
+              <KpiGrid kpis={visibleKpis} />
             ) : null}
 
             <section

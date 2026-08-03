@@ -48,6 +48,10 @@ const INVENTORY_HEADERS = [
 
 const COST_SHEET_NAME = 'COGS';
 const HISTORICAL_SHEET_NAME = 'Q1-AMJ26';
+const HISTORICAL_START_DATE = '2026-04-01';
+const HISTORICAL_END_DATE = '2026-06-30';
+const DEFAULT_TRANSACTION_PAGE_SIZE = 25;
+const MAX_TRANSACTION_PAGE_SIZE = 100;
 const COST_HEADERS = [
   'SKU',
   'Product Name',
@@ -125,10 +129,16 @@ function doGet(e) {
     const action = String(parameters.action || 'dashboard').toLowerCase();
     let data;
 
+    if (action === 'transactionscsv') {
+      return getTransactionsCsv(parameters);
+    }
+
     if (action === 'dashboard') {
       data = getDashboardData();
     } else if (action === 'transactions') {
-      data = getTransactions();
+      data = getTransactions(parameters);
+    } else if (action === 'facilitydashboard') {
+      data = getFacilityDashboard(parameters.facility || '');
     } else if (action === 'binmaster') {
       data = getBinMaster();
     } else if (action === 'skumaster') {
@@ -139,7 +149,7 @@ function doGet(e) {
       data = getActivityStatus(parameters.date || '');
     } else {
       throw new Error(
-        'Unknown action. Use dashboard, transactions, binMaster, skuMaster, config, or activityStatus.'
+        'Unknown action. Use dashboard, transactions, transactionsCsv, facilityDashboard, binMaster, skuMaster, config, or activityStatus.'
       );
     }
 
@@ -469,19 +479,342 @@ function getAllInventoryData_() {
 }
 
 /**
- * Returns current and Q1 historical transactions with newest dates first.
+ * Returns one small, server-side page of transactions plus KPI/chart summaries.
+ *
+ * Supported parameters:
+ * startDate, endDate, facility, page, pageSize, search, sortKey,
+ * sortDirection, and includeUndatedNtf.
+ *
+ * The old API returned every current and historical row in one response. That
+ * eventually exceeded the practical Web App response time. This paginated
+ * response keeps the dashboard fast while preserving the same calculations.
  */
-function getTransactions() {
-  const rows = getAllInventoryData_().allRows;
+function getTransactions(optionalParameters) {
+  const parameters = optionalParameters || {};
+  const selection = buildTransactionSelection_(parameters);
+  const page = positiveIntegerParameter_(parameters.page, 1);
+  const requestedPageSize = positiveIntegerParameter_(
+    parameters.pageSize,
+    DEFAULT_TRANSACTION_PAGE_SIZE
+  );
+  const pageSize = Math.min(
+    requestedPageSize,
+    MAX_TRANSACTION_PAGE_SIZE
+  );
+  const pageCount = Math.max(
+    1,
+    Math.ceil(selection.tableRows.length / pageSize)
+  );
+  const safePage = Math.min(page, pageCount);
+  const pageStart = (safePage - 1) * pageSize;
+  const periodKey = selection.singleDate
+    ? 'yesterday'
+    : 'monthToDate';
 
-  rows.sort(function (first, second) {
-    const dateResult = String(second.date).localeCompare(String(first.date));
-    return dateResult !== 0
-      ? dateResult
-      : String(first.facility).localeCompare(String(second.facility));
+  return {
+    rows: selection.tableRows.slice(pageStart, pageStart + pageSize),
+    totalRows: selection.tableRows.length,
+    selectedRowCount: selection.selectedRows.length,
+    page: safePage,
+    pageSize: pageSize,
+    pageCount: pageCount,
+    startDate: selection.startDate,
+    endDate: selection.endDate,
+    facility: selection.facility,
+    facilities: selection.facilities,
+    kpis: calculateKpis(selection.selectedRows, {
+      periodKey: periodKey,
+      startDate: selection.startDate,
+      endDate: selection.endDate,
+      config: selection.config
+    }),
+    charts: calculateCharts(selection.selectedRows)
+  };
+}
+
+/**
+ * Returns the four fixed KPI periods recalculated for one facility.
+ *
+ * This small summary endpoint is called only when the Facility filter changes,
+ * so the frontend never needs all historical transaction rows for its banners.
+ */
+function getFacilityDashboard(facility) {
+  const requestedFacility = cleanText_(facility);
+
+  if (!requestedFacility) {
+    return getDashboardData();
+  }
+
+  return buildDashboard_(getAllInventoryData_(), {
+    facility: requestedFacility
+  });
+}
+
+/**
+ * Creates the filtered CSV used by the transaction table Export button.
+ *
+ * CSV generation is deliberately separate from the initial JSON request. A
+ * large file is therefore generated only when the user explicitly downloads
+ * it, instead of blocking every dashboard visit.
+ */
+function getTransactionsCsv(optionalParameters) {
+  const selection = buildTransactionSelection_(optionalParameters || {});
+  const columns = transactionCsvColumns_();
+  const csvLines = [columns.map(function (column) {
+    return csvCell_(column[0]);
+  }).join(',')];
+
+  selection.tableRows.forEach(function (row) {
+    csvLines.push(columns.map(function (column) {
+      return csvCell_(column[1](row));
+    }).join(','));
   });
 
-  return rows;
+  return ContentService
+    .createTextOutput('\uFEFF' + csvLines.join('\r\n'))
+    .setMimeType(ContentService.MimeType.CSV);
+}
+
+/**
+ * Reads, filters, searches, and sorts the rows shared by JSON and CSV output.
+ */
+function buildTransactionSelection_(parameters) {
+  const range = transactionRangeFromParameters_(parameters);
+  const facility = cleanText_(parameters.facility);
+  const includeUndatedNtf =
+    String(parameters.includeUndatedNtf || '').toLowerCase() === 'true';
+  const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const costMap = readCostMap_(spreadsheet);
+  const currentRows = getCombinedData(spreadsheet, costMap);
+  const historicalRows = dateRangesOverlap_(
+    range.startDate,
+    range.endDate,
+    HISTORICAL_START_DATE,
+    HISTORICAL_END_DATE
+  )
+    ? getHistoricalData(spreadsheet, costMap)
+    : [];
+  const availableRows = currentRows.concat(historicalRows);
+  const selectedRows = availableRows.filter(function (row) {
+    const datedMatch = row.date &&
+      row.date >= range.startDate &&
+      row.date <= range.endDate;
+    const undatedNtfMatch = includeUndatedNtf &&
+      row.sourceType === 'current' &&
+      !row.date &&
+      isNtfRow_(row);
+
+    return (datedMatch || undatedNtfMatch) &&
+      (!facility || row.facility === facility);
+  });
+  const searchText = cleanText_(parameters.search).toLowerCase();
+  const searchedRows = searchText
+    ? selectedRows.filter(function (row) {
+        return transactionSearchText_(row).indexOf(searchText) >= 0;
+      })
+    : selectedRows.slice();
+  const sortKey = validTransactionSortKey_(parameters.sortKey);
+  const sortDirection = String(parameters.sortDirection).toLowerCase() === 'asc'
+    ? 'asc'
+    : 'desc';
+
+  searchedRows.sort(function (first, second) {
+    return compareTransactionRows_(
+      first,
+      second,
+      sortKey,
+      sortDirection
+    );
+  });
+
+  return {
+    config: getConfig(),
+    startDate: range.startDate,
+    endDate: range.endDate,
+    singleDate: range.startDate === range.endDate,
+    facility: facility,
+    facilities: uniqueTexts_(currentRows.map(function (row) {
+      return row.facility;
+    })),
+    selectedRows: selectedRows,
+    tableRows: searchedRows
+  };
+}
+
+/**
+ * Uses Month to Date when the API caller does not provide an explicit range.
+ */
+function transactionRangeFromParameters_(parameters) {
+  const defaultRange = reportingRanges_().monthToDate;
+  const startDate = cleanText_(parameters.startDate) || defaultRange.startDate;
+  const endDate = cleanText_(parameters.endDate) || defaultRange.endDate;
+
+  if (!parseIsoDate_(startDate) || !parseIsoDate_(endDate)) {
+    throw new Error(
+      'Transaction dates must use yyyy-MM-dd format.'
+    );
+  }
+
+  if (startDate > endDate) {
+    throw new Error(
+      'Transaction startDate cannot be after endDate.'
+    );
+  }
+
+  return {
+    startDate: startDate,
+    endDate: endDate
+  };
+}
+
+/**
+ * Returns true when two inclusive ISO date ranges overlap.
+ */
+function dateRangesOverlap_(firstStart, firstEnd, secondStart, secondEnd) {
+  return firstStart <= secondEnd && firstEnd >= secondStart;
+}
+
+/**
+ * Converts one query parameter to a safe positive whole number.
+ */
+function positiveIntegerParameter_(value, fallback) {
+  const number = Number(value);
+  return isFinite(number) && number >= 1
+    ? Math.floor(number)
+    : fallback;
+}
+
+/**
+ * Creates the case-insensitive text searched by the transaction table.
+ */
+function transactionSearchText_(row) {
+  return [
+    row.date,
+    row.facility,
+    row.rack,
+    row.skuCode,
+    row.itemName,
+    row.shelf,
+    row.batch,
+    row.vendorBatchNumber,
+    row.unitCost,
+    row.systemQuantity,
+    row.physicalQuantity,
+    row.difference,
+    row.systemValue,
+    row.physicalValue,
+    row.differenceValue,
+    row.remark
+  ].join(' ').toLowerCase();
+}
+
+/**
+ * Allows sorting only by transaction fields exposed by the table.
+ */
+function validTransactionSortKey_(requestedKey) {
+  const allowedKeys = [
+    'date',
+    'facility',
+    'rack',
+    'skuCode',
+    'itemName',
+    'shelf',
+    'batch',
+    'vendorBatchNumber',
+    'unitCost',
+    'systemQuantity',
+    'physicalQuantity',
+    'difference',
+    'systemValue',
+    'physicalValue',
+    'differenceValue',
+    'remark'
+  ];
+  const key = cleanText_(requestedKey);
+  return allowedKeys.indexOf(key) >= 0 ? key : 'date';
+}
+
+/**
+ * Compares two transaction values for server-side table sorting.
+ */
+function compareTransactionRows_(first, second, sortKey, direction) {
+  const firstValue = first[sortKey];
+  const secondValue = second[sortKey];
+  let comparison = 0;
+
+  if (firstValue === null && secondValue !== null) {
+    comparison = 1;
+  } else if (firstValue !== null && secondValue === null) {
+    comparison = -1;
+  } else if (
+    typeof firstValue === 'number' &&
+    typeof secondValue === 'number'
+  ) {
+    comparison = firstValue - secondValue;
+  } else {
+    comparison = String(firstValue || '').localeCompare(
+      String(secondValue || ''),
+      undefined,
+      { numeric: true, sensitivity: 'base' }
+    );
+  }
+
+  if (comparison === 0) {
+    comparison = String(first.id).localeCompare(String(second.id));
+  }
+
+  return direction === 'asc' ? comparison : 0 - comparison;
+}
+
+/**
+ * Returns unique nonblank text values in natural sort order.
+ */
+function uniqueTexts_(values) {
+  const unique = {};
+
+  values.forEach(function (value) {
+    const text = cleanText_(value);
+    if (text) {
+      unique[text] = true;
+    }
+  });
+
+  return Object.keys(unique).sort(function (first, second) {
+    return first.localeCompare(second, undefined, {
+      numeric: true,
+      sensitivity: 'base'
+    });
+  });
+}
+
+/**
+ * Defines the columns shared by table CSV export and email audit files.
+ */
+function transactionCsvColumns_() {
+  return [
+    ['Date', function (row) { return row.date; }],
+    ['Facility', function (row) { return row.facility; }],
+    ['Rack', function (row) { return row.rack; }],
+    ['SKU', function (row) { return row.skuCode; }],
+    ['Item Name', function (row) { return row.itemName; }],
+    ['Shelf', function (row) { return row.shelf; }],
+    ['Batch', function (row) { return row.batch; }],
+    ['Vendor Batch', function (row) { return row.vendorBatchNumber; }],
+    ['Unit Cost', function (row) { return csvOptionalNumber_(row.unitCost); }],
+    ['System Quantity', function (row) { return row.systemQuantity; }],
+    ['Physical Quantity', function (row) { return row.physicalQuantity; }],
+    ['Difference', function (row) { return row.difference; }],
+    ['System Value', function (row) {
+      return csvOptionalNumber_(row.systemValue);
+    }],
+    ['Physical Value', function (row) {
+      return csvOptionalNumber_(row.physicalValue);
+    }],
+    ['Difference Value', function (row) {
+      return csvOptionalNumber_(row.differenceValue);
+    }],
+    ['Remark', function (row) { return row.remark; }]
+  ];
 }
 
 /**
@@ -645,6 +978,130 @@ function calculateKpis(inventoryRows, options) {
     actualBinCount: actualBinCount,
     cycleCountCompletion: round_(completion, 2)
   };
+}
+
+/**
+ * Calculates the four chart datasets for the selected transaction range.
+ *
+ * Returning these small datasets from Apps Script means the browser no longer
+ * needs thousands of raw rows just to draw the dashboard charts.
+ */
+function calculateCharts(inventoryRows) {
+  const rows = Array.isArray(inventoryRows) ? inventoryRows : [];
+  const rowsByDate = {};
+  const rowsByFacility = {};
+
+  rows.forEach(function (row) {
+    if (row.date) {
+      rowsByDate[row.date] = rowsByDate[row.date] || [];
+      rowsByDate[row.date].push(row);
+    }
+
+    if (row.facility) {
+      rowsByFacility[row.facility] = rowsByFacility[row.facility] || [];
+      rowsByFacility[row.facility].push(row);
+    }
+  });
+
+  const dates = Object.keys(rowsByDate).sort();
+  const facilities = Object.keys(rowsByFacility).sort(function (
+    first,
+    second
+  ) {
+    return first.localeCompare(second, undefined, {
+      numeric: true,
+      sensitivity: 'base'
+    });
+  });
+  const inventoryAccuracyValues = dates.map(function (date) {
+    return inventoryAccuracyForRows_(rowsByDate[date]);
+  });
+
+  return {
+    inventoryAccuracyTrend: {
+      categories: dates,
+      values: inventoryAccuracyValues,
+      pointColors: inventoryAccuracyValues.map(function (value) {
+        return getAccuracyStyle(value).indicator;
+      })
+    },
+    binAccuracyTrend: {
+      categories: dates,
+      values: dates.map(function (date) {
+        return binAccuracyForRows_(rowsByDate[date]);
+      })
+    },
+    facilityInventoryAccuracy: {
+      categories: facilities,
+      values: facilities.map(function (facility) {
+        return inventoryAccuracyForRows_(rowsByFacility[facility]);
+      }),
+      pointColors: facilities.map(function (facility) {
+        return getAccuracyStyle(
+          inventoryAccuracyForRows_(rowsByFacility[facility])
+        ).indicator;
+      })
+    },
+    ntfTrend: {
+      categories: dates,
+      values: dates.map(function (date) {
+        return rowsByDate[date].filter(isNtfRow_).length;
+      })
+    }
+  };
+}
+
+/**
+ * Calculates quantity accuracy for one chart group.
+ */
+function inventoryAccuracyForRows_(rows) {
+  let systemQuantity = 0;
+  let absoluteDifference = 0;
+
+  rows.forEach(function (row) {
+    const system = toNumber_(row.systemQuantity);
+    const difference = isNtfRow_(row)
+      ? 0 - system
+      : toNumber_(row.difference);
+    systemQuantity += system;
+    absoluteDifference += Math.abs(difference);
+  });
+
+  return round_(
+    systemQuantity === 0
+      ? 0
+      : 100 - (absoluteDifference / systemQuantity) * 100,
+    2
+  );
+}
+
+/**
+ * Calculates bin accuracy for one chart group.
+ */
+function binAccuracyForRows_(rows) {
+  const binDifferences = {};
+
+  rows.forEach(function (row) {
+    const key = binKey_(row);
+    if (!key) {
+      return;
+    }
+
+    const difference = isNtfRow_(row)
+      ? 0 - toNumber_(row.systemQuantity)
+      : toNumber_(row.difference);
+    binDifferences[key] = (binDifferences[key] || 0) + difference;
+  });
+
+  const keys = Object.keys(binDifferences);
+  if (keys.length === 0) {
+    return 0;
+  }
+
+  const accurateBins = keys.filter(function (key) {
+    return Math.abs(binDifferences[key]) < 0.000001;
+  }).length;
+  return round_((accurateBins / keys.length) * 100, 2);
 }
 
 /**
@@ -1057,6 +1514,41 @@ function testEmailPreview() {
 
   console.log(JSON.stringify(result, null, 2));
   return result;
+}
+
+/**
+ * Tests the small Month-to-Date transaction response without changing sheets.
+ *
+ * The log confirms pagination, KPI/chart summaries, and the first response
+ * size. Run this after deployment when checking dashboard loading performance.
+ */
+function testPaginatedTransactions() {
+  const range = reportingRanges_().monthToDate;
+  const result = getTransactions({
+    startDate: range.startDate,
+    endDate: range.endDate,
+    page: 1,
+    pageSize: 25,
+    sortKey: 'date',
+    sortDirection: 'desc',
+    includeUndatedNtf: 'true'
+  });
+  const output = {
+    passed: true,
+    startDate: result.startDate,
+    endDate: result.endDate,
+    selectedRowCount: result.selectedRowCount,
+    returnedRowCount: result.rows.length,
+    page: result.page,
+    pageSize: result.pageSize,
+    pageCount: result.pageCount,
+    facilityCount: result.facilities.length,
+    chartDateCount: result.charts.inventoryAccuracyTrend.categories.length,
+    responseBytes: JSON.stringify(result).length
+  };
+
+  console.log(JSON.stringify(output, null, 2));
+  return output;
 }
 
 /**
@@ -1478,10 +1970,16 @@ function testMasters() {
 /**
  * Builds the Last Quarter, Last Month, Month to Date, and Yesterday summary.
  */
-function buildDashboard_(optionalInventoryData) {
+function buildDashboard_(optionalInventoryData, optionalFilters) {
   const config = getConfig();
   const inventoryData = optionalInventoryData || getAllInventoryData_();
-  const rows = inventoryData.allRows;
+  const dashboardFilters = optionalFilters || {};
+  const requestedFacility = cleanText_(dashboardFilters.facility);
+  const rows = requestedFacility
+    ? inventoryData.allRows.filter(function (row) {
+        return row.facility === requestedFacility;
+      })
+    : inventoryData.allRows;
   const ranges = reportingRanges_();
   const periods = {};
 

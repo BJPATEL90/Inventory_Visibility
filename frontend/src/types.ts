@@ -124,6 +124,51 @@ export interface InventoryTransaction {
   remark: string;
 }
 
+export type TransactionSortKey =
+  | 'date'
+  | 'facility'
+  | 'rack'
+  | 'skuCode'
+  | 'itemName'
+  | 'shelf'
+  | 'batch'
+  | 'vendorBatchNumber'
+  | 'unitCost'
+  | 'systemQuantity'
+  | 'physicalQuantity'
+  | 'difference'
+  | 'systemValue'
+  | 'physicalValue'
+  | 'differenceValue'
+  | 'remark';
+
+export interface TransactionQuery {
+  startDate: string;
+  endDate: string;
+  facility: string;
+  page: number;
+  pageSize: number;
+  search: string;
+  sortKey: TransactionSortKey;
+  sortDirection: 'asc' | 'desc';
+  includeUndatedNtf: boolean;
+}
+
+export interface TransactionPageData {
+  rows: InventoryTransaction[];
+  totalRows: number;
+  selectedRowCount: number;
+  page: number;
+  pageSize: number;
+  pageCount: number;
+  startDate: string;
+  endDate: string;
+  facility: string;
+  facilities: string[];
+  kpis: Kpis;
+  charts: DashboardChartData;
+}
+
 export interface ActivityStatus {
   date: string;
   reason: string;

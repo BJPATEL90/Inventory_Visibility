@@ -4,8 +4,9 @@ import type {
   BinMasterRow,
   DashboardConfig,
   DashboardData,
-  InventoryTransaction,
-  SkuMasterRow
+  SkuMasterRow,
+  TransactionPageData,
+  TransactionQuery
 } from './types';
 
 const APPS_SCRIPT_URL = String(
@@ -74,8 +75,77 @@ export function getDashboard() {
   return request<DashboardData>('dashboard');
 }
 
-export function getTransactions() {
-  return request<InventoryTransaction[]>('transactions');
+function transactionParameters(query: TransactionQuery) {
+  return {
+    startDate: query.startDate,
+    endDate: query.endDate,
+    facility: query.facility,
+    page: String(query.page),
+    pageSize: String(query.pageSize),
+    search: query.search,
+    sortKey: query.sortKey,
+    sortDirection: query.sortDirection,
+    includeUndatedNtf: String(query.includeUndatedNtf)
+  };
+}
+
+export function getTransactions(query: TransactionQuery) {
+  return request<TransactionPageData>(
+    'transactions',
+    transactionParameters(query)
+  );
+}
+
+export function getFacilityDashboard(facility: string) {
+  return request<DashboardData>('facilityDashboard', { facility });
+}
+
+export async function downloadTransactionsCsv(query: TransactionQuery) {
+  const response = await fetch(
+    getApiUrl('transactionsCsv', transactionParameters(query)),
+    {
+      method: 'GET',
+      headers: {
+        Accept: 'text/csv'
+      },
+      redirect: 'follow'
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      `The CSV request failed with status ${response.status}.`
+    );
+  }
+
+  const responseText = await response.text();
+  if (/^\s*</.test(responseText)) {
+    throw new Error(
+      'Google did not return the CSV file. Try a smaller date range.'
+    );
+  }
+
+  if (/^\s*\{/.test(responseText)) {
+    try {
+      const errorPayload = JSON.parse(responseText) as ApiResponse<unknown>;
+      if (!errorPayload.success) {
+        throw new Error(
+          errorPayload.message || 'Unable to prepare the CSV file.'
+        );
+      }
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+    }
+  }
+
+  return {
+    blob: new Blob([responseText], {
+      type: 'text/csv;charset=utf-8'
+    }),
+    fileName: `inventory-transactions-${query.startDate}-to-${query.endDate}.csv`
+  };
 }
 
 export function getConfig() {

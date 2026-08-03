@@ -416,6 +416,7 @@ Run these functions one at a time:
 | `testQuarterData()` | `Q1-AMJ26`, historical date range, and four periods | No |
 | `testMasters()` | Bin and SKU master APIs | No |
 | `testEmailPreview()` | Email model, HTML, and quarter CSV without sending | No |
+| `testPaginatedTransactions()` | Small MTD transaction page, KPI/chart summaries, and response size | No |
 
 For each test:
 
@@ -464,7 +465,8 @@ Replace `YOUR_WEB_APP_URL` with the copied `/exec` URL:
 ```text
 YOUR_WEB_APP_URL?action=config
 YOUR_WEB_APP_URL?action=dashboard
-YOUR_WEB_APP_URL?action=transactions
+YOUR_WEB_APP_URL?action=transactions&startDate=2026-08-01&endDate=2026-08-03&page=1&pageSize=25
+YOUR_WEB_APP_URL?action=facilityDashboard&facility=SL_MH
 YOUR_WEB_APP_URL?action=activityStatus&date=2026-07-23
 YOUR_WEB_APP_URL?action=binMaster
 YOUR_WEB_APP_URL?action=skuMaster
@@ -481,6 +483,11 @@ A successful response has this structure:
 ```
 
 The `data` shape depends on the action.
+
+The `transactions` action is server-side paginated. It returns only the
+requested page together with the KPI totals, four chart datasets, row counts,
+and Facility options for the selected date range. This prevents the browser
+from downloading all current and historical rows during startup.
 
 If the browser shows HTML, a Google login page, or an authorization error
 instead of JSON, check the deployment access setting and confirm the URL ends
@@ -768,6 +775,8 @@ accuracy:
 - [ ] Run `testValueKpis()` and review cost coverage and missing SKUs.
 - [ ] Run `testNtfRecalculation()` and confirm `"passed": true`.
 - [ ] Run `testQuarterData()` and review the historical date range.
+- [ ] Run `testPaginatedTransactions()` and confirm only the requested page is
+  returned while `selectedRowCount` shows the full selected-period count.
 - [ ] Run `testEmailPreview()` and review both four-period summaries.
 - [ ] Test every API URL directly in a browser.
 

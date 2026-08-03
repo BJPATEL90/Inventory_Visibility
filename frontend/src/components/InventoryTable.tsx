@@ -1,4 +1,3 @@
-import { useEffect, useMemo, useState } from 'react';
 import {
   ArrowDown,
   ArrowUp,
@@ -9,33 +8,36 @@ import {
   Search,
   Table2
 } from 'lucide-react';
-import type { InventoryTransaction } from '../types';
+import type {
+  InventoryTransaction,
+  TransactionSortKey
+} from '../types';
 
 type SortDirection = 'asc' | 'desc';
-type SortKey =
-  | 'date'
-  | 'facility'
-  | 'rack'
-  | 'skuCode'
-  | 'itemName'
-  | 'shelf'
-  | 'batch'
-  | 'vendorBatchNumber'
-  | 'unitCost'
-  | 'systemQuantity'
-  | 'physicalQuantity'
-  | 'difference'
-  | 'systemValue'
-  | 'physicalValue'
-  | 'differenceValue'
-  | 'remark';
 
 interface InventoryTableProps {
   rows: InventoryTransaction[];
+  totalRows: number;
+  page: number;
+  pageSize: number;
+  pageCount: number;
+  searchText: string;
+  sortKey: TransactionSortKey;
+  sortDirection: SortDirection;
+  isLoading: boolean;
+  isExporting: boolean;
+  onSearchChange: (value: string) => void;
+  onSortChange: (
+    key: TransactionSortKey,
+    direction: SortDirection
+  ) => void;
+  onPageChange: (page: number) => void;
+  onPageSizeChange: (pageSize: number) => void;
+  onExportCsv: () => void;
 }
 
 interface ColumnDefinition {
-  key: SortKey;
+  key: TransactionSortKey;
   label: string;
   numeric?: boolean;
   className?: string;
@@ -46,11 +48,7 @@ const columns: ColumnDefinition[] = [
   { key: 'facility', label: 'Facility' },
   { key: 'rack', label: 'Rack' },
   { key: 'skuCode', label: 'SKU' },
-  {
-    key: 'itemName',
-    label: 'Item Name',
-    className: 'min-w-64'
-  },
+  { key: 'itemName', label: 'Item Name', className: 'min-w-64' },
   { key: 'shelf', label: 'Shelf' },
   { key: 'batch', label: 'Batch' },
   {
@@ -64,12 +62,12 @@ const columns: ColumnDefinition[] = [
   { key: 'difference', label: 'Difference', numeric: true },
   { key: 'systemValue', label: 'System Value', numeric: true },
   { key: 'physicalValue', label: 'Physical Value', numeric: true },
-  { key: 'differenceValue', label: 'Difference Value', numeric: true },
   {
-    key: 'remark',
-    label: 'Remark',
-    className: 'min-w-32'
-  }
+    key: 'differenceValue',
+    label: 'Difference Value',
+    numeric: true
+  },
+  { key: 'remark', label: 'Remark', className: 'min-w-32' }
 ];
 
 const numberFormatter = new Intl.NumberFormat('en-IN', {
@@ -97,158 +95,38 @@ function formatDate(value: string) {
       }).format(date);
 }
 
-function compareValues(
-  first: string | number | null,
-  second: string | number | null,
-  direction: SortDirection
-) {
-  const multiplier = direction === 'asc' ? 1 : -1;
-
-  if (first === null && second === null) {
-    return 0;
-  }
-
-  if (first === null) {
-    return 1;
-  }
-
-  if (second === null) {
-    return -1;
-  }
-
-  if (typeof first === 'number' && typeof second === 'number') {
-    return (first - second) * multiplier;
-  }
-
-  return (
-    String(first).localeCompare(String(second), undefined, {
-      numeric: true,
-      sensitivity: 'base'
-    }) * multiplier
-  );
-}
-
-function csvCell(value: string | number | null) {
-  return `"${String(value ?? '').replace(/"/g, '""')}"`;
-}
-
-export function InventoryTable({ rows }: InventoryTableProps) {
-  const [searchText, setSearchText] = useState('');
-  const [sortKey, setSortKey] = useState<SortKey>('date');
-  const [sortDirection, setSortDirection] =
-    useState<SortDirection>('desc');
-  const [pageSize, setPageSize] = useState(25);
-  const [page, setPage] = useState(1);
-
-  const searchedAndSortedRows = useMemo(() => {
-    const search = searchText.trim().toLowerCase();
-    const searchedRows = search
-      ? rows.filter((row) =>
-          [
-            row.date,
-            row.facility,
-            row.rack,
-            row.skuCode,
-            row.itemName,
-            row.shelf,
-            row.batch,
-            row.vendorBatchNumber,
-            row.unitCost,
-            row.systemQuantity,
-            row.physicalQuantity,
-            row.difference,
-            row.systemValue,
-            row.physicalValue,
-            row.differenceValue,
-            row.remark
-          ]
-            .join(' ')
-            .toLowerCase()
-            .includes(search)
-        )
-      : [...rows];
-
-    return searchedRows.sort((first, second) =>
-      compareValues(
-        first[sortKey],
-        second[sortKey],
-        sortDirection
-      )
-    );
-  }, [rows, searchText, sortDirection, sortKey]);
-
-  const pageCount = Math.max(
-    1,
-    Math.ceil(searchedAndSortedRows.length / pageSize)
-  );
-  const safePage = Math.min(page, pageCount);
-  const pageRows = searchedAndSortedRows.slice(
-    (safePage - 1) * pageSize,
-    safePage * pageSize
-  );
-  const firstVisibleRow =
-    searchedAndSortedRows.length === 0
-      ? 0
-      : (safePage - 1) * pageSize + 1;
+export function InventoryTable({
+  rows,
+  totalRows,
+  page,
+  pageSize,
+  pageCount,
+  searchText,
+  sortKey,
+  sortDirection,
+  isLoading,
+  isExporting,
+  onSearchChange,
+  onSortChange,
+  onPageChange,
+  onPageSizeChange,
+  onExportCsv
+}: InventoryTableProps) {
+  const firstVisibleRow = totalRows === 0 ? 0 : (page - 1) * pageSize + 1;
   const lastVisibleRow = Math.min(
-    safePage * pageSize,
-    searchedAndSortedRows.length
+    (page - 1) * pageSize + rows.length,
+    totalRows
   );
 
-  useEffect(() => {
-    setPage(1);
-  }, [pageSize, rows, searchText, sortDirection, sortKey]);
-
-  function changeSort(nextSortKey: SortKey) {
+  function changeSort(nextSortKey: TransactionSortKey) {
     if (sortKey === nextSortKey) {
-      setSortDirection((current) =>
-        current === 'asc' ? 'desc' : 'asc'
+      onSortChange(
+        nextSortKey,
+        sortDirection === 'asc' ? 'desc' : 'asc'
       );
     } else {
-      setSortKey(nextSortKey);
-      setSortDirection('asc');
+      onSortChange(nextSortKey, 'asc');
     }
-  }
-
-  function exportCsv() {
-    const headers = columns.map((column) => csvCell(column.label));
-    const dataRows = searchedAndSortedRows.map((row) =>
-      [
-        row.date,
-        row.facility,
-        row.rack,
-        row.skuCode,
-        row.itemName,
-        row.shelf,
-        row.batch,
-        row.vendorBatchNumber,
-        row.unitCost,
-        row.systemQuantity,
-        row.physicalQuantity,
-        row.difference,
-        row.systemValue,
-        row.physicalValue,
-        row.differenceValue,
-        row.remark
-      ]
-        .map(csvCell)
-        .join(',')
-    );
-    const csv = `\uFEFF${[headers.join(','), ...dataRows].join('\r\n')}`;
-    const blob = new Blob([csv], {
-      type: 'text/csv;charset=utf-8'
-    });
-    const downloadUrl = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-
-    link.href = downloadUrl;
-    link.download = `inventory-transactions-${
-      new Date().toISOString().slice(0, 10)
-    }.csv`;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(downloadUrl);
   }
 
   function renderCell(
@@ -357,19 +235,19 @@ export function InventoryTable({ rows }: InventoryTableProps) {
             <input
               type="search"
               value={searchText}
-              onChange={(event) => setSearchText(event.target.value)}
+              onChange={(event) => onSearchChange(event.target.value)}
               placeholder="Search all columns..."
               className="h-10 w-full rounded-lg border border-slate-300 bg-white pl-9 pr-3 text-sm text-slate-800 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
             />
           </label>
           <button
             type="button"
-            onClick={exportCsv}
-            disabled={searchedAndSortedRows.length === 0}
+            onClick={onExportCsv}
+            disabled={totalRows === 0 || isExporting}
             className="flex h-10 items-center justify-center gap-2 rounded-lg bg-blue-700 px-4 text-sm font-semibold text-white transition hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Download aria-hidden="true" className="h-4 w-4" />
-            Export CSV
+            {isExporting ? 'Preparing CSV...' : 'Export CSV'}
           </button>
         </div>
       </div>
@@ -407,7 +285,16 @@ export function InventoryTable({ rows }: InventoryTableProps) {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-            {pageRows.length === 0 ? (
+            {isLoading ? (
+              <tr>
+                <td
+                  colSpan={columns.length}
+                  className="px-4 py-14 text-center text-slate-500 dark:text-slate-400"
+                >
+                  Loading transaction page...
+                </td>
+              </tr>
+            ) : rows.length === 0 ? (
               <tr>
                 <td
                   colSpan={columns.length}
@@ -417,7 +304,7 @@ export function InventoryTable({ rows }: InventoryTableProps) {
                 </td>
               </tr>
             ) : (
-              pageRows.map((row) => (
+              rows.map((row) => (
                 <tr
                   key={row.id}
                   className="transition hover:bg-blue-50/50 dark:hover:bg-blue-950/20"
@@ -445,7 +332,7 @@ export function InventoryTable({ rows }: InventoryTableProps) {
         <p className="text-sm text-slate-500 dark:text-slate-400">
           Showing {numberFormatter.format(firstVisibleRow)}–
           {numberFormatter.format(lastVisibleRow)} of{' '}
-          {numberFormatter.format(searchedAndSortedRows.length)}
+          {numberFormatter.format(totalRows)}
         </p>
 
         <div className="flex flex-wrap items-center gap-3">
@@ -453,7 +340,9 @@ export function InventoryTable({ rows }: InventoryTableProps) {
             Rows
             <select
               value={pageSize}
-              onChange={(event) => setPageSize(Number(event.target.value))}
+              onChange={(event) =>
+                onPageSizeChange(Number(event.target.value))
+              }
               className="h-9 rounded-lg border border-slate-300 bg-white px-2 text-sm text-slate-800 outline-none focus:border-blue-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
             >
               {[10, 25, 50, 100].map((size) => (
@@ -465,13 +354,13 @@ export function InventoryTable({ rows }: InventoryTableProps) {
           </label>
 
           <span className="text-sm font-medium text-slate-600 dark:text-slate-300">
-            Page {safePage} of {pageCount}
+            Page {page} of {pageCount}
           </span>
           <button
             type="button"
             aria-label="Previous page"
-            onClick={() => setPage((current) => Math.max(1, current - 1))}
-            disabled={safePage === 1}
+            onClick={() => onPageChange(Math.max(1, page - 1))}
+            disabled={page === 1 || isLoading}
             className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-300 text-slate-700 transition hover:border-blue-400 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:text-slate-300"
           >
             <ChevronLeft className="h-4 w-4" />
@@ -479,10 +368,8 @@ export function InventoryTable({ rows }: InventoryTableProps) {
           <button
             type="button"
             aria-label="Next page"
-            onClick={() =>
-              setPage((current) => Math.min(pageCount, current + 1))
-            }
-            disabled={safePage === pageCount}
+            onClick={() => onPageChange(Math.min(pageCount, page + 1))}
+            disabled={page === pageCount || isLoading}
             className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-300 text-slate-700 transition hover:border-blue-400 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:text-slate-300"
           >
             <ChevronRight className="h-4 w-4" />

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   AlertCircle,
@@ -16,10 +16,12 @@ import {
   Warehouse
 } from 'lucide-react';
 import {
+  downloadTransactionsCsv,
   getActivityStatus,
   getBinMaster,
   getConfig,
   getDashboard,
+  getFacilityDashboard,
   getSkuMaster,
   getTransactions
 } from './api';
@@ -32,11 +34,7 @@ import {
   type MasterColumn
 } from './components/MasterTable';
 import {
-  calculateCharts,
-  calculateFilteredKpis,
   EMPTY_FILTERS,
-  filterTransactions,
-  getFilterOptions,
   hasActiveFilters,
   hasDimensionFilters,
   getAccuracyStyle
@@ -47,7 +45,9 @@ import type {
   Kpis,
   PeriodData,
   PeriodKey,
-  SkuMasterRow
+  SkuMasterRow,
+  TransactionQuery,
+  TransactionSortKey
 } from './types';
 
 const PERIOD_KEYS: PeriodKey[] = [
@@ -56,6 +56,20 @@ const PERIOD_KEYS: PeriodKey[] = [
   'monthToDate',
   'yesterday'
 ];
+
+function useDebouncedValue<T>(value: T, delay: number) {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedValue(value);
+    }, delay);
+
+    return () => window.clearTimeout(timer);
+  }, [delay, value]);
+
+  return debouncedValue;
+}
 
 // Change this to true when the read-only Masters section is needed again.
 const SHOW_MASTERS = false;
@@ -577,6 +591,15 @@ export default function App() {
   const [themeInitialized, setThemeInitialized] = useState(() => {
     return localStorage.getItem('inventory-theme') !== null;
   });
+  const [tablePage, setTablePage] = useState(1);
+  const [tablePageSize, setTablePageSize] = useState(25);
+  const [tableSearch, setTableSearch] = useState('');
+  const [tableSortKey, setTableSortKey] =
+    useState<TransactionSortKey>('date');
+  const [tableSortDirection, setTableSortDirection] =
+    useState<'asc' | 'desc'>('desc');
+  const [isExportingCsv, setIsExportingCsv] = useState(false);
+  const debouncedTableSearch = useDebouncedValue(tableSearch, 400);
 
   const configQuery = useQuery({
     queryKey: ['config'],
@@ -596,9 +619,46 @@ export default function App() {
     retry: 1
   });
 
+  const dashboard = dashboardQuery.data?.data;
+  const config = configQuery.data?.data;
+  const period = dashboard?.periods.monthToDate;
+  const transactionStartDate = filters.date || period?.startDate || '';
+  const transactionEndDate = filters.date || period?.endDate || '';
+  const transactionParameters: TransactionQuery = {
+    startDate: transactionStartDate,
+    endDate: transactionEndDate,
+    facility: filters.facility,
+    page: tablePage,
+    pageSize: tablePageSize,
+    search: debouncedTableSearch,
+    sortKey: tableSortKey,
+    sortDirection: tableSortDirection,
+    includeUndatedNtf: !filters.date
+  };
+
   const transactionsQuery = useQuery({
-    queryKey: ['transactions'],
-    queryFn: getTransactions,
+    queryKey: [
+      'transactions',
+      transactionStartDate,
+      transactionEndDate,
+      filters.facility,
+      tablePage,
+      tablePageSize,
+      debouncedTableSearch,
+      tableSortKey,
+      tableSortDirection
+    ],
+    queryFn: () => getTransactions(transactionParameters),
+    enabled: Boolean(transactionStartDate && transactionEndDate),
+    refetchInterval: refreshInterval,
+    retry: 1,
+    placeholderData: (previousData) => previousData
+  });
+
+  const facilityDashboardQuery = useQuery({
+    queryKey: ['facilityDashboard', filters.facility],
+    queryFn: () => getFacilityDashboard(filters.facility),
+    enabled: Boolean(filters.facility),
     refetchInterval: refreshInterval,
     retry: 1
   });
@@ -619,92 +679,34 @@ export default function App() {
     retry: 1
   });
 
-  const dashboard = dashboardQuery.data?.data;
-  const config = configQuery.data?.data;
-  const transactions = transactionsQuery.data?.data || [];
+  const transactionPage = transactionsQuery.data?.data;
+  const transactions = transactionPage?.rows || [];
   const binMaster = binMasterQuery.data?.data || [];
   const skuMaster = skuMasterQuery.data?.data || [];
-  const period = dashboard?.periods.monthToDate;
   const filtersAreActive = hasActiveFilters(filters);
   const dimensionFiltersAreActive = hasDimensionFilters(filters);
-
-  const filterOptions = useMemo(
-    () => getFilterOptions(transactions),
-    [transactions]
-  );
-
-  const filteredRows = useMemo(() => {
-    if (!period) {
-      return [];
-    }
-
-    return filterTransactions(
-      transactions,
-      filters,
-      period.startDate,
-      period.endDate,
-      true
-    );
-  }, [filters, period, transactions]);
-
-  const visibleKpis = useMemo(() => {
-    if (!period || !config) {
-      return null;
-    }
-
-    const plannedBins = filters.date
-      ? config.dailyPlannedBinCount
-      : period.kpis.plannedBinCount;
-
-    return calculateFilteredKpis(filteredRows, plannedBins);
-  }, [config, filteredRows, filters.date, filtersAreActive, period]);
-
-  const bannerPeriods = useMemo(() => {
-    if (!dashboard) {
-      return null;
-    }
-
-    const periodCopies = { ...dashboard.periods };
-    const dimensionFilters = { ...filters, date: '' };
-
-    PERIOD_KEYS.forEach((periodKey) => {
-      const periodData = dashboard.periods[periodKey];
-      const rows = filterTransactions(
-        transactions,
-        dimensionFilters,
-        periodData.startDate,
-        periodData.endDate,
-        periodKey === 'monthToDate'
-      );
-
-      periodCopies[periodKey] = {
-        ...periodData,
-        rowCount: rows.length,
-        kpis: calculateFilteredKpis(
-          rows,
-          periodData.kpis.plannedBinCount
-        )
-      };
-    });
-
-    return periodCopies;
-  }, [
-    dashboard,
-    filters,
-    transactions
-  ]);
-
-  const chartData = useMemo(
-    () => calculateCharts(filteredRows),
-    [filteredRows]
-  );
+  const filterOptions = {
+    facilities: transactionPage?.facilities || [],
+    racks: [],
+    skus: [],
+    batches: [],
+    remarks: []
+  };
+  const visibleKpis = transactionPage?.kpis || null;
+  const chartData = transactionPage?.charts || null;
+  const selectedRowCount = transactionPage?.selectedRowCount || 0;
+  const bannerPeriods = filters.facility
+    ? facilityDashboardQuery.data?.data.periods || dashboard?.periods
+    : dashboard?.periods;
 
   const activityQuery = useQuery({
     queryKey: ['activityStatus', filters.date],
     queryFn: () => getActivityStatus(filters.date),
     enabled:
       Boolean(filters.date) &&
-      filteredRows.length === 0 &&
+      !transactionsQuery.isLoading &&
+      !transactionsQuery.error &&
+      selectedRowCount === 0 &&
       !dimensionFiltersAreActive,
     retry: 1
   });
@@ -729,18 +731,17 @@ export default function App() {
   const isLoading =
     configQuery.isLoading ||
     dashboardQuery.isLoading ||
-    transactionsQuery.isLoading ||
     (SHOW_MASTERS &&
       (binMasterQuery.isLoading || skuMasterQuery.isLoading));
   const error =
     configQuery.error ||
     dashboardQuery.error ||
-    transactionsQuery.error ||
     (SHOW_MASTERS && (binMasterQuery.error || skuMasterQuery.error));
   const isRefreshing =
     configQuery.isFetching ||
     dashboardQuery.isFetching ||
     transactionsQuery.isFetching ||
+    (Boolean(filters.facility) && facilityDashboardQuery.isFetching) ||
     (SHOW_MASTERS &&
       (binMasterQuery.isFetching || skuMasterQuery.isFetching));
 
@@ -750,6 +751,10 @@ export default function App() {
       dashboardQuery.refetch(),
       transactionsQuery.refetch()
     ];
+
+    if (filters.facility) {
+      requests.push(facilityDashboardQuery.refetch());
+    }
 
     if (SHOW_MASTERS) {
       requests.push(
@@ -765,10 +770,64 @@ export default function App() {
     name: keyof DashboardFilters,
     value: string
   ) {
+    setTablePage(1);
     setFilters((current) => ({
       ...current,
       [name]: value
     }));
+  }
+
+  function clearFilters() {
+    setTablePage(1);
+    setFilters({ ...EMPTY_FILTERS });
+  }
+
+  function updateTableSearch(value: string) {
+    setTablePage(1);
+    setTableSearch(value);
+  }
+
+  function updateTableSort(
+    key: TransactionSortKey,
+    direction: 'asc' | 'desc'
+  ) {
+    setTablePage(1);
+    setTableSortKey(key);
+    setTableSortDirection(direction);
+  }
+
+  function updateTablePageSize(pageSize: number) {
+    setTablePage(1);
+    setTablePageSize(pageSize);
+  }
+
+  async function exportTransactionsCsv() {
+    setIsExportingCsv(true);
+
+    try {
+      const result = await downloadTransactionsCsv({
+        ...transactionParameters,
+        page: 1,
+        search: tableSearch
+      });
+      const downloadUrl = URL.createObjectURL(result.blob);
+      const link = document.createElement('a');
+
+      link.href = downloadUrl;
+      link.download = result.fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(downloadUrl);
+    } catch (downloadError) {
+      window.alert(
+        downloadError instanceof Error
+          ? downloadError.message
+          : 'Unable to prepare the CSV file.'
+      );
+    } finally {
+      setIsExportingCsv(false);
+    }
   }
 
   const title =
@@ -778,6 +837,13 @@ export default function App() {
   const lastRefreshTime =
     dashboardQuery.data?.lastRefreshTime ||
     transactionsQuery.data?.lastRefreshTime;
+  const transactionInitialLoading =
+    transactionsQuery.isLoading && !transactionPage;
+  const transactionErrorMessage = transactionsQuery.error instanceof Error
+    ? transactionsQuery.error.message
+    : transactionsQuery.error
+      ? 'The selected transaction data could not be loaded.'
+      : '';
 
   let emptyTitle = 'No inventory data found';
   let emptyMessage =
@@ -833,7 +899,7 @@ export default function App() {
           message="The API response did not include dashboard configuration."
           onRetry={retryAll}
         />
-      ) : transactions.length === 0 ? (
+      ) : dashboard.sourceSummary.totalTransactionRowCount === 0 ? (
         <div className="mx-auto max-w-2xl px-4 py-20 text-center">
           <Database className="mx-auto h-12 w-12 text-slate-400" />
           <h2 className="mt-4 text-xl font-semibold">
@@ -851,7 +917,7 @@ export default function App() {
             filters={filters}
             options={filterOptions}
             onChange={updateFilter}
-            onClear={() => setFilters({ ...EMPTY_FILTERS })}
+            onClear={clearFilters}
           />
 
           <main className="mx-auto max-w-[1600px] px-4 py-8 sm:px-6 lg:px-8">
@@ -876,9 +942,11 @@ export default function App() {
                   Executive KPI
                 </h2>
                 <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                  {filtersAreActive
-                    ? `${formatNumber(filteredRows.length)} matching rows`
-                    : `${formatNumber(filteredRows.length)} Month-to-Date rows`}
+                  {transactionInitialLoading
+                    ? 'Loading the selected transaction summary...'
+                    : filtersAreActive
+                    ? `${formatNumber(selectedRowCount)} matching rows`
+                    : `${formatNumber(selectedRowCount)} Month-to-Date rows`}
                 </p>
               </div>
               <span className="inline-flex w-fit items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
@@ -889,7 +957,37 @@ export default function App() {
               </span>
             </div>
 
-            {filteredRows.length === 0 ? (
+            {transactionInitialLoading ? (
+              <div className="rounded-2xl border border-blue-200 bg-blue-50 px-6 py-10 text-center shadow-sm dark:border-blue-900 dark:bg-blue-950/30">
+                <RefreshCw className="mx-auto h-10 w-10 animate-spin text-blue-600 dark:text-blue-400" />
+                <h3 className="mt-4 text-lg font-semibold text-blue-950 dark:text-blue-100">
+                  Loading selected-period details
+                </h3>
+                <p className="mx-auto mt-2 max-w-2xl text-sm leading-6 text-blue-800 dark:text-blue-300">
+                  The KPI banners are ready. Transaction details and charts are
+                  being calculated in the background.
+                </p>
+              </div>
+            ) : transactionErrorMessage ? (
+              <div className="rounded-2xl border border-red-200 bg-red-50 px-6 py-10 text-center shadow-sm dark:border-red-900 dark:bg-red-950/30">
+                <AlertCircle className="mx-auto h-10 w-10 text-red-600 dark:text-red-400" />
+                <h3 className="mt-4 text-lg font-semibold text-red-950 dark:text-red-100">
+                  Transaction details could not be loaded
+                </h3>
+                <p className="mx-auto mt-2 max-w-2xl text-sm leading-6 text-red-800 dark:text-red-300">
+                  {transactionErrorMessage}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void transactionsQuery.refetch();
+                  }}
+                  className="mt-5 rounded-lg bg-red-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-800"
+                >
+                  Retry transaction data
+                </button>
+              </div>
+            ) : selectedRowCount === 0 ? (
               <div className="rounded-2xl border border-amber-200 bg-amber-50 px-6 py-10 text-center shadow-sm dark:border-amber-900 dark:bg-amber-950/30">
                 <AlertCircle className="mx-auto h-10 w-10 text-amber-600 dark:text-amber-400" />
                 <h3 className="mt-4 text-lg font-semibold text-amber-950 dark:text-amber-100">
@@ -901,7 +999,7 @@ export default function App() {
                     : emptyMessage}
                 </p>
               </div>
-            ) : visibleKpis ? (
+            ) : visibleKpis && chartData ? (
               <>
                 <KpiGrid kpis={visibleKpis} />
 
@@ -996,7 +1094,32 @@ export default function App() {
                   Search, sort, paginate, and download the filtered rows as CSV.
                 </p>
               </div>
-              <InventoryTable rows={filteredRows} />
+              {transactionErrorMessage ? (
+                <div className="rounded-2xl border border-red-200 bg-red-50 px-6 py-8 text-center text-sm text-red-800 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
+                  Transaction table unavailable. Use the retry button in
+                  Section 1.
+                </div>
+              ) : (
+                <InventoryTable
+                  rows={transactions}
+                  totalRows={transactionPage?.totalRows || 0}
+                  page={transactionPage?.page || tablePage}
+                  pageSize={transactionPage?.pageSize || tablePageSize}
+                  pageCount={transactionPage?.pageCount || 1}
+                  searchText={tableSearch}
+                  sortKey={tableSortKey}
+                  sortDirection={tableSortDirection}
+                  isLoading={transactionsQuery.isFetching}
+                  isExporting={isExportingCsv}
+                  onSearchChange={updateTableSearch}
+                  onSortChange={updateTableSort}
+                  onPageChange={setTablePage}
+                  onPageSizeChange={updateTablePageSize}
+                  onExportCsv={() => {
+                    void exportTransactionsCsv();
+                  }}
+                />
+              )}
             </section>
 
             {SHOW_MASTERS ? (

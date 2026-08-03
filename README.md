@@ -487,7 +487,9 @@ The `data` shape depends on the action.
 The `transactions` action is server-side paginated. It returns only the
 requested page together with the KPI totals, four chart datasets, row counts,
 and Facility options for the selected date range. This prevents the browser
-from downloading all current and historical rows during startup.
+from downloading all current and historical rows during startup. The default
+Month-to-Date page is also prewarmed by `refreshDashboardCache` and small page
+responses are cached for 10 minutes.
 
 If the browser shows HTML, a Google login page, or an authorization error
 instead of JSON, check the deployment access setting and confirm the URL ends

@@ -52,6 +52,8 @@ const HISTORICAL_START_DATE = '2026-04-01';
 const HISTORICAL_END_DATE = '2026-06-30';
 const DEFAULT_TRANSACTION_PAGE_SIZE = 25;
 const MAX_TRANSACTION_PAGE_SIZE = 100;
+const TRANSACTION_CACHE_PREFIX = 'inventory_transaction_page_v1_';
+const TRANSACTION_CACHE_SECONDS = 600;
 const COST_HEADERS = [
   'SKU',
   'Product Name',
@@ -491,7 +493,31 @@ function getAllInventoryData_() {
  */
 function getTransactions(optionalParameters) {
   const parameters = optionalParameters || {};
-  const selection = buildTransactionSelection_(parameters);
+  const cacheKey = transactionCacheKey_(parameters);
+  const cache = CacheService.getScriptCache();
+  const cachedText = cache.get(cacheKey);
+
+  if (cachedText) {
+    try {
+      return JSON.parse(cachedText);
+    } catch (error) {
+      console.warn('A transaction page cache entry was invalid.');
+    }
+  }
+
+  const result = buildTransactionsResponse_(parameters);
+  cacheTransactionResponse_(cacheKey, result);
+  return result;
+}
+
+/**
+ * Builds one transaction page from either fresh or already-read inventory.
+ */
+function buildTransactionsResponse_(parameters, optionalInventoryData) {
+  const selection = buildTransactionSelection_(
+    parameters,
+    optionalInventoryData
+  );
   const page = positiveIntegerParameter_(parameters.page, 1);
   const requestedPageSize = positiveIntegerParameter_(
     parameters.pageSize,
@@ -578,22 +604,37 @@ function getTransactionsCsv(optionalParameters) {
 /**
  * Reads, filters, searches, and sorts the rows shared by JSON and CSV output.
  */
-function buildTransactionSelection_(parameters) {
+function buildTransactionSelection_(parameters, optionalInventoryData) {
   const range = transactionRangeFromParameters_(parameters);
   const facility = cleanText_(parameters.facility);
   const includeUndatedNtf =
     String(parameters.includeUndatedNtf || '').toLowerCase() === 'true';
-  const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const costMap = readCostMap_(spreadsheet);
-  const currentRows = getCombinedData(spreadsheet, costMap);
-  const historicalRows = dateRangesOverlap_(
-    range.startDate,
-    range.endDate,
-    HISTORICAL_START_DATE,
-    HISTORICAL_END_DATE
-  )
-    ? getHistoricalData(spreadsheet, costMap)
-    : [];
+  let currentRows;
+  let historicalRows;
+
+  if (optionalInventoryData) {
+    currentRows = optionalInventoryData.currentRows;
+    historicalRows = dateRangesOverlap_(
+      range.startDate,
+      range.endDate,
+      HISTORICAL_START_DATE,
+      HISTORICAL_END_DATE
+    )
+      ? optionalInventoryData.historicalRows
+      : [];
+  } else {
+    const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const costMap = readCostMap_(spreadsheet);
+    currentRows = getCombinedData(spreadsheet, costMap);
+    historicalRows = dateRangesOverlap_(
+      range.startDate,
+      range.endDate,
+      HISTORICAL_START_DATE,
+      HISTORICAL_END_DATE
+    )
+      ? getHistoricalData(spreadsheet, costMap)
+      : [];
+  }
   const availableRows = currentRows.concat(historicalRows);
   const selectedRows = availableRows.filter(function (row) {
     const datedMatch = row.date &&
@@ -682,6 +723,59 @@ function positiveIntegerParameter_(value, fallback) {
   return isFinite(number) && number >= 1
     ? Math.floor(number)
     : fallback;
+}
+
+/**
+ * Creates a short stable cache key for one transaction page request.
+ */
+function transactionCacheKey_(parameters) {
+  const keyText = [
+    cleanText_(parameters.startDate),
+    cleanText_(parameters.endDate),
+    cleanText_(parameters.facility),
+    positiveIntegerParameter_(parameters.page, 1),
+    Math.min(
+      positiveIntegerParameter_(
+        parameters.pageSize,
+        DEFAULT_TRANSACTION_PAGE_SIZE
+      ),
+      MAX_TRANSACTION_PAGE_SIZE
+    ),
+    cleanText_(parameters.search).toLowerCase(),
+    validTransactionSortKey_(parameters.sortKey),
+    String(parameters.sortDirection).toLowerCase() === 'asc'
+      ? 'asc'
+      : 'desc',
+    String(parameters.includeUndatedNtf).toLowerCase() === 'true'
+      ? 'true'
+      : 'false'
+  ].join('|');
+  let hash = 2166136261;
+
+  for (let index = 0; index < keyText.length; index += 1) {
+    hash ^= keyText.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+
+  return TRANSACTION_CACHE_PREFIX +
+    (hash >>> 0).toString(36) +
+    '_' +
+    keyText.length;
+}
+
+/**
+ * Stores one small JSON page when it fits safely inside Apps Script Cache.
+ */
+function cacheTransactionResponse_(cacheKey, result) {
+  const responseText = JSON.stringify(result);
+
+  if (responseText.length <= 90000) {
+    CacheService.getScriptCache().put(
+      cacheKey,
+      responseText,
+      TRANSACTION_CACHE_SECONDS
+    );
+  }
 }
 
 /**
@@ -1288,14 +1382,37 @@ function refreshDashboardCache() {
   }
 
   try {
-    const dashboard = buildDashboard_();
+    const inventoryData = getAllInventoryData_();
+    const dashboard = buildDashboard_(inventoryData);
     const refreshTime = new Date().toISOString();
+    const scriptCache = CacheService.getScriptCache();
 
-    CacheService.getScriptCache().put(
+    scriptCache.put(
       DASHBOARD_CACHE_KEY,
       JSON.stringify(dashboard),
       21600
     );
+
+    const monthToDate = dashboard.periods.monthToDate;
+    const defaultTransactionParameters = {
+      startDate: monthToDate.startDate,
+      endDate: monthToDate.endDate,
+      page: 1,
+      pageSize: DEFAULT_TRANSACTION_PAGE_SIZE,
+      search: '',
+      sortKey: 'date',
+      sortDirection: 'desc',
+      includeUndatedNtf: 'true'
+    };
+    const defaultTransactionPage = buildTransactionsResponse_(
+      defaultTransactionParameters,
+      inventoryData
+    );
+    cacheTransactionResponse_(
+      transactionCacheKey_(defaultTransactionParameters),
+      defaultTransactionPage
+    );
+
     PropertiesService.getScriptProperties().setProperty(
       LAST_REFRESH_PROPERTY,
       refreshTime

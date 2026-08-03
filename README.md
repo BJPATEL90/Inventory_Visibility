@@ -11,6 +11,9 @@ Published dashboard: [Inventory Health Dashboard](https://bjpatel90.github.io/In
 
 Repository: [BJPATEL90/Inventory_Visibility](https://github.com/BJPATEL90/Inventory_Visibility)
 
+One-page operating guide:
+[PROJECT_PROCESS_NOTE.md](PROJECT_PROCESS_NOTE.md)
+
 The Apps Script refresh and email triggers run in Google's cloud. After they are
 installed, the dashboard can refresh its cached summary and send scheduled
 emails even when the user's laptop is switched off.

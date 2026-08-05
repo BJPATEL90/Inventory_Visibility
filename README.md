@@ -25,13 +25,13 @@ Google temporarily returns a Web App error, the saved dashboard remains visible
 with a warning and Retry button. A new browser or cleared browser storage needs
 one successful load before this fallback is available.
 
-## V1 production and local V2
+## Current production release and V1 rollback
 
-The published GitHub Pages dashboard and Apps Script deployment remain the
-stable **V1 production release**. Development for quantity cycle-coverage is
-kept on the local branch `codex/v2-cycle-coverage`. Do not publish that branch
-or replace the Apps Script Web App deployment until the V2 test checklist has
-passed and final deployment is approved.
+The approved **V2 production release** adds quantity cycle-coverage to the
+existing accuracy dashboard. The previous V1 production code is preserved at
+commit `abbcbc5`, tag `v1-production-backup-2026-08-06`, and branch
+`codex/backup-v1-production-2026-08-06`. These references must not be deleted;
+they provide the rollback source if a production issue is found.
 
 V2 adds three separate frontend pages using a left navigation panel:
 
@@ -135,11 +135,10 @@ not changed. The Gmail importer searches from the configured cycle start so
 July inventory snapshots can then be backfilled with repeated
 `importLatestInventoryEmail()` runs.
 
-### V2 Apps Script test order
+### Apps Script verification order
 
-Do not change the production deployment while testing V2. In the Apps Script
-editor, use the following order when a V2 test copy or approved head test is
-available:
+Use the following order after copying a new backend version or while checking
+the production project:
 
 1. Run `testCycleCoverageCalculations()` - it changes nothing and verifies
    exact OWN, inventory-type separation, and counted-quantity grouping.
@@ -156,13 +155,17 @@ available:
 Run `removeCycleCoverageV2Trigger()` if the isolated test should stop checking
 Gmail. This removes only the V2 inventory-import trigger from that test project.
 
-## Current V1 production release
+## Current dashboard behavior
 
-The current frontend contains two visible sections:
+The current frontend contains three visible pages:
 
-1. **KPI and ABC Class details**
-2. **Inventory Transactions**, including search, sorting, pagination, and CSV
-   download
+1. **Executive KPI**, including quantity coverage, four-period quantity and
+   COGS accuracy, ABC Class details, and KPI cards.
+2. **Inventory Transactions**, including Date and Facility filters, search,
+   sorting, pagination, and CSV download.
+3. **Facility MTD Progress**, including facility coverage cards and the
+   day-wise opening inventory, counted quantity, completion, and inventory
+   movement table.
 
 The read-only Bin Master and SKU Master APIs are implemented, but **Section 3:
 Masters is intentionally hidden in the frontend for now**.

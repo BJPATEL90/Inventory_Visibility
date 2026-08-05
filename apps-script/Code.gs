@@ -3859,8 +3859,11 @@ function buildEmailReport_(config, period, periods, cycleCoverage) {
         value: formatEmailPercent_(
           summaryPeriod.kpis.inventoryAccuracy
         ),
-        quantity: formatEmailNumber_(
+        systemQuantity: formatEmailNumber_(
           summaryPeriod.kpis.systemQuantity
+        ),
+        physicalQuantity: formatEmailNumber_(
+          summaryPeriod.kpis.physicalQuantity
         ),
         dateRange:
           formatEmailDate_(summaryPeriod.startDate) +
@@ -3885,8 +3888,11 @@ function buildEmailReport_(config, period, periods, cycleCoverage) {
         value: formatEmailPercent_(
           summaryPeriod.kpis.valueAccuracy
         ),
-        inventoryValue: formatEmailCurrency_(
+        systemValue: formatEmailCurrency_(
           summaryPeriod.kpis.systemValue
+        ),
+        physicalValue: formatEmailCurrency_(
+          summaryPeriod.kpis.physicalValue
         ),
         costCoverage: formatEmailPercent_(
           summaryPeriod.kpis.costCoverage
@@ -4017,13 +4023,15 @@ function buildPlainTextEmail_(report) {
   lines.push('Inventory Accuracy Summary');
   report.periodSummary.forEach(function (period) {
     lines.push(period.label + ': ' + period.value);
-    lines.push('  Qty: ' + period.quantity);
+    lines.push('  System Qty: ' + period.systemQuantity);
+    lines.push('  Physical Qty: ' + period.physicalQuantity);
   });
 
   lines.push('Value Accuracy Summary');
   report.valuePeriodSummary.forEach(function (period) {
     lines.push(period.label + ': ' + period.value);
-    lines.push('  Value: ' + period.inventoryValue);
+    lines.push('  System Value: ' + period.systemValue);
+    lines.push('  Physical Value: ' + period.physicalValue);
     lines.push('  Cost Coverage: ' + period.costCoverage);
   });
 

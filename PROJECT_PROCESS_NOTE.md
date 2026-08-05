@@ -10,15 +10,15 @@ when the user's computer is switched off.
 ## 2. Process Flow
 
 ```text
-Inventory Sheets + Q1 History + SKU Master + COGS + Activity Status
-                              |
-                              v
-                 Google Apps Script processing
-                              |
-                +-------------+-------------+
-                |                           |
-                v                           v
-       GitHub Pages Dashboard       Scheduled Email + QTD CSV
+Cycle Counts + Daily GOOD Inventory Email + Masters + COGS + Activity Status
+                                   |
+                                   v
+                      Google Apps Script processing
+                                   |
+                     +-------------+-------------+
+                     |                           |
+                     v                           v
+            GitHub Pages Dashboard       Scheduled Email + QTD CSV
 ```
 
 Google Sheets is the database. Google Apps Script combines and calculates the
@@ -50,13 +50,17 @@ and reduce Cost Coverage.
    and missing unit rates in `COGS`.
 3. Google Apps Script refreshes the dashboard cache automatically using the
    interval in `Config > Auto Refresh Minutes`.
-4. Users open the dashboard, review the four period banners, and select a card
+4. Google Apps Script checks Gmail for the daily successful shelf-inventory
+   export and stores the GOOD opening quantity in `Cycle_Coverage_System`.
+5. Users open the dashboard, review the four period banners, and select a card
    to open its ABC quantity and COGS breakdown.
-5. Users can select a Date and Facility, review detailed KPIs and transactions,
+6. Users can select a Date and Facility, review detailed KPIs and transactions,
    search or sort the table, and download the selected rows as CSV.
-6. Before sending the daily email, Apps Script reads fresh Sheet data. It sends
-   Yesterday's report at the configured hour and attaches the quarter-to-date
-   transaction CSV.
+7. Users open **Facility MTD Progress** to review opening GOOD inventory,
+   cumulative counted quantity, completion, and day-over-day inventory change.
+8. Before sending the daily email, Apps Script reads fresh Sheet data and
+   refreshes cycle coverage. It sends Yesterday's report with the Q2 coverage
+   summary and attaches the quarter-to-date transaction CSV.
 
 If urgent data was entered after the latest refresh, run
 `refreshDashboardCache()` once from Apps Script and then refresh the dashboard.
@@ -78,6 +82,7 @@ Retry button without removing the last available dashboard.
 | Cycle Count Completion | Actual unique bins ÷ planned bins |
 | NTF treatment | NTF means not found: Physical Quantity becomes zero and Difference becomes `0 − System Quantity` |
 | ABC breakdown | Unique SKUs and total quantities/values grouped into A, B, C, Unclassified, and Total |
+| Quantity Coverage | Cumulative counted System Quantity since 1 July 2026 divided by the latest opening GOOD inventory quantity |
 
 Accuracy colour rules are Red below 96%, Yellow from 96% to below 99%, and
 Green from 99% upward. Negative quantities and values are displayed in

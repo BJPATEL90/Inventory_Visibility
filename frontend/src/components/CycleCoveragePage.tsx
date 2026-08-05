@@ -99,7 +99,7 @@ export function CycleCoverageBanner({
   if (!latest) {
     return (
       <section
-        className={`overflow-hidden rounded-3xl bg-gradient-to-r from-blue-950 via-blue-900 to-blue-800 p-6 text-white shadow-lg ${className}`}
+        className={`overflow-hidden rounded-2xl bg-gradient-to-r from-blue-950 via-blue-900 to-blue-800 p-5 text-white shadow-md ${className}`}
       >
         <div className="flex min-h-32 flex-col items-center justify-center text-center">
           {isLoading ? (
@@ -138,41 +138,41 @@ export function CycleCoverageBanner({
 
   return (
     <section
-      className={`overflow-hidden rounded-3xl bg-gradient-to-r from-blue-950 via-blue-900 to-blue-800 p-6 text-white shadow-lg ${className}`}
+      className={`overflow-hidden rounded-2xl bg-gradient-to-r from-blue-950 via-blue-900 to-blue-800 p-5 text-white shadow-md ${className}`}
     >
-      <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-200">
             Overall quantity coverage
           </p>
-          <p className="mt-2 text-5xl font-black tracking-tight">
+          <p className="mt-1.5 text-4xl font-black tracking-tight">
             {formatPercent(latest.totalCompletionPercent)}
           </p>
           <p className="mt-2 text-sm text-blue-200">
             As of {formatDate(latest.date)}
           </p>
         </div>
-        <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-          <div className="rounded-2xl bg-white/10 px-4 py-3 ring-1 ring-white/15">
+        <div className="grid grid-cols-2 gap-2 xl:grid-cols-4">
+          <div className="rounded-xl bg-white/10 px-3 py-2 ring-1 ring-white/15">
             <p className="text-xs text-blue-200">Opening GOOD Qty</p>
-            <p className="mt-1 text-lg font-black">
+            <p className="mt-1 text-base font-black">
               {formatNumber(latest.totalGoodQuantity)}
             </p>
           </div>
-          <div className="rounded-2xl bg-white/10 px-4 py-3 ring-1 ring-white/15">
+          <div className="rounded-xl bg-white/10 px-3 py-2 ring-1 ring-white/15">
             <p className="text-xs text-blue-200">Cumulative Counted</p>
-            <p className="mt-1 text-lg font-black">
+            <p className="mt-1 text-base font-black">
               {formatNumber(latest.totalCumulativeCountedQuantity)}
             </p>
           </div>
-          <div className="rounded-2xl bg-white/10 px-4 py-3 ring-1 ring-white/15">
+          <div className="rounded-xl bg-white/10 px-3 py-2 ring-1 ring-white/15">
             <p className="text-xs text-blue-200">Counted Today</p>
-            <p className="mt-1 text-lg font-black">
+            <p className="mt-1 text-base font-black">
               {formatNumber(latest.totalDailyCountedQuantity)}
             </p>
           </div>
           <div
-            className={`rounded-2xl px-4 py-3 ring-1 ${
+            className={`rounded-xl px-3 py-2 ring-1 ${
               changeThresholdReached
                 ? 'bg-amber-400/20 ring-amber-300/50'
                 : 'bg-white/10 ring-white/15'
@@ -181,7 +181,7 @@ export function CycleCoverageBanner({
           >
             <p className="text-xs text-blue-200">Inventory Change</p>
             <p
-              className={`mt-1 text-lg font-black ${
+              className={`mt-1 text-base font-black ${
                 changeThresholdReached ? 'text-amber-200' : 'text-white'
               }`}
             >
@@ -193,7 +193,7 @@ export function CycleCoverageBanner({
           </div>
         </div>
       </div>
-      <div className="mt-6 h-3 overflow-hidden rounded-full bg-white/15">
+      <div className="mt-5 h-2.5 overflow-hidden rounded-full bg-white/15">
         <span
           className="block h-full rounded-full bg-gradient-to-r from-cyan-400 to-emerald-400 transition-[width] duration-500"
           style={{ width: progressWidth(latest.totalCompletionPercent) }}
@@ -325,31 +325,31 @@ export function CycleCoveragePage({
         </div>
       ) : null}
 
-      <section className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {data.facilities.map((facility) => {
           const metrics = latest.facilities[facility];
           return (
             <article
               key={facility}
-              className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"
+              className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900"
             >
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
                     {FACILITY_LABELS[facility]}
                   </p>
-                  <p className="mt-2 text-3xl font-black text-blue-700 dark:text-blue-300">
+                  <p className="mt-1.5 text-2xl font-black text-blue-700 dark:text-blue-300">
                     {formatPercent(metrics.completionPercent)}
                   </p>
                 </div>
-                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300">
+                <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300">
                   <Target className="h-5 w-5" />
                 </span>
               </div>
-              <div className="mt-4">
+              <div className="mt-3">
                 <ProgressBar value={metrics.completionPercent} />
               </div>
-              <dl className="mt-4 space-y-2 text-xs">
+              <dl className="mt-3 space-y-1.5 text-xs">
                 <div className="flex justify-between gap-3">
                   <dt className="text-slate-500">Opening GOOD Qty</dt>
                   <dd className="font-bold">
@@ -368,7 +368,7 @@ export function CycleCoveragePage({
         })}
       </section>
 
-      <section className="mt-8 overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <section className="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
         <div className="flex items-start gap-3 border-b border-slate-200 px-5 py-4 dark:border-slate-800">
           <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300">
             <CalendarDays className="h-5 w-5" />

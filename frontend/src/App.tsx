@@ -171,23 +171,23 @@ function DashboardHeader({
 }) {
   return (
     <header className="border-b border-blue-800 bg-gradient-to-r from-blue-950 via-blue-900 to-blue-800 text-white">
-      <div className="mx-auto flex max-w-[1600px] flex-col gap-5 px-4 py-6 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
-        <div className="flex items-center gap-4">
-          <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/10 ring-1 ring-white/20">
-            <Warehouse aria-hidden="true" className="h-6 w-6" />
+      <div className="mx-auto flex max-w-[1440px] flex-col gap-4 px-4 py-4 sm:px-5 lg:flex-row lg:items-center lg:justify-between lg:px-6">
+        <div className="flex items-center gap-3">
+          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/10 ring-1 ring-white/20">
+            <Warehouse aria-hidden="true" className="h-5 w-5" />
           </span>
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-200">
               Inventory visibility
             </p>
-            <h1 className="mt-1 text-2xl font-bold tracking-tight sm:text-3xl">
+            <h1 className="mt-0.5 text-xl font-bold tracking-tight sm:text-2xl">
               {title}
             </h1>
           </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          <div className="rounded-xl bg-white/10 px-4 py-2 ring-1 ring-white/15">
+          <div className="rounded-lg bg-white/10 px-3 py-1.5 ring-1 ring-white/15">
             <p className="text-xs text-blue-200">Last refresh</p>
             <p className="mt-0.5 text-sm font-semibold">
               {formatRefreshTime(lastRefreshTime)}
@@ -197,7 +197,7 @@ function DashboardHeader({
             type="button"
             onClick={onRefresh}
             disabled={isRefreshing}
-            className="flex h-11 items-center gap-2 rounded-xl bg-white px-4 text-sm font-semibold text-blue-900 transition hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-white/60 disabled:cursor-wait disabled:opacity-70"
+            className="flex h-9 items-center gap-2 rounded-lg bg-white px-3 text-sm font-semibold text-blue-900 transition hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-white/60 disabled:cursor-wait disabled:opacity-70"
           >
             <RefreshCw
               aria-hidden="true"
@@ -209,7 +209,7 @@ function DashboardHeader({
             type="button"
             onClick={onToggleTheme}
             aria-label={darkMode ? 'Use light mode' : 'Use dark mode'}
-            className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/10 ring-1 ring-white/20 transition hover:bg-white/20 focus:outline-none focus:ring-2 focus:ring-white/60"
+            className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/10 ring-1 ring-white/20 transition hover:bg-white/20 focus:outline-none focus:ring-2 focus:ring-white/60"
           >
             {darkMode ? (
               <Sun aria-hidden="true" className="h-5 w-5" />
@@ -303,11 +303,11 @@ function SectionNavigation({
 
   return (
     <aside
-      className="shrink-0 border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 lg:min-h-[calc(100vh-113px)] lg:w-64 lg:border-b-0 lg:border-r"
+      className="shrink-0 border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 lg:min-h-[calc(100vh-89px)] lg:w-56 lg:border-b-0 lg:border-r"
     >
       <nav
         aria-label="Dashboard pages"
-        className="flex gap-2 overflow-x-auto px-4 py-4 lg:sticky lg:top-0 lg:flex-col lg:px-3 lg:py-6"
+        className="flex gap-2 overflow-x-auto px-4 py-3 lg:sticky lg:top-0 lg:flex-col lg:px-3 lg:py-4"
       >
         {links.map((link) => {
           const Icon = link.icon;
@@ -318,20 +318,20 @@ function SectionNavigation({
               key={link.page}
               onClick={() => onChange(link.page)}
               aria-current={isActive ? 'page' : undefined}
-              className={`group flex min-w-56 items-center gap-3 rounded-xl border px-4 py-3 text-left transition focus:outline-none focus:ring-2 focus:ring-blue-500/30 lg:min-w-0 ${
+              className={`group flex min-w-52 items-center gap-2.5 rounded-lg border px-3 py-2.5 text-left transition focus:outline-none focus:ring-2 focus:ring-blue-500/30 lg:min-w-0 ${
                 isActive
                   ? 'border-blue-700 bg-blue-700 text-white shadow-sm'
                   : 'border-slate-200 bg-slate-50 hover:border-blue-300 hover:bg-blue-50 dark:border-slate-700 dark:bg-slate-950 dark:hover:border-blue-700 dark:hover:bg-blue-950/40'
               }`}
             >
               <span
-                className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
+                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${
                   isActive
                     ? 'bg-white/15 text-white'
                     : 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300'
                 }`}
               >
-                <Icon aria-hidden="true" className="h-5 w-5" />
+                <Icon aria-hidden="true" className="h-4.5 w-4.5" />
               </span>
               <span className="min-w-0">
                 <span
@@ -371,13 +371,13 @@ function QuantityAccuracyBanner({
   return (
       <section
         id="kpi-section"
-        className="scroll-mt-80 overflow-hidden rounded-3xl border border-blue-200 bg-gradient-to-r from-blue-950 via-blue-900 to-blue-800 p-5 shadow-lg shadow-blue-950/10 sm:p-6 xl:scroll-mt-32"
+        className="scroll-mt-80 overflow-hidden rounded-2xl border border-blue-200 bg-gradient-to-r from-blue-950 via-blue-900 to-blue-800 p-4 shadow-md shadow-blue-950/10 sm:p-5 xl:scroll-mt-32"
       >
-        <div className="mb-5">
+        <div className="mb-4">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-200">
             Executive KPI
           </p>
-          <h2 className="mt-1 text-2xl font-bold text-white">
+          <h2 className="mt-1 text-xl font-bold text-white">
             Inventory Accuracy — Quantity
           </h2>
           <p className="mt-1 text-xs text-blue-200">
@@ -397,7 +397,7 @@ function QuantityAccuracyBanner({
                 aria-expanded={isSelected}
                 aria-controls="abc-breakdown-panel"
                 onClick={() => onSelectPeriod(periodKey)}
-                className={`rounded-2xl border bg-white p-4 text-left shadow-sm transition focus:outline-none focus:ring-4 focus:ring-blue-300/50 ${
+                className={`rounded-xl border bg-white p-3 text-left shadow-sm transition focus:outline-none focus:ring-4 focus:ring-blue-300/50 ${
                   isSelected
                     ? 'border-blue-300 ring-4 ring-blue-300/30'
                     : 'border-white/15 hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md'
@@ -407,27 +407,33 @@ function QuantityAccuracyBanner({
                   {period.label}
                 </p>
                 <p
-                  className="mt-2 text-3xl font-black tracking-tight"
+                  className="mt-1.5 text-2xl font-black tracking-tight"
                   style={{ color: style.text }}
                 >
                   {formatPercent(period.kpis.inventoryAccuracy)}
                 </p>
-                <div className="mt-3 border-t border-slate-200 pt-3 text-xs">
+                <div className="mt-2 space-y-1 border-t border-slate-200 pt-2 text-xs">
                   <p className="flex items-center justify-between gap-2 text-slate-600">
                     <span className="font-medium">System Qty</span>
                     <strong className="text-right text-slate-900">
                       {formatNumber(period.kpis.systemQuantity)}
                     </strong>
                   </p>
+                  <p className="flex items-center justify-between gap-2 text-slate-600">
+                    <span className="font-medium">Physical Qty</span>
+                    <strong className="text-right text-slate-900">
+                      {formatNumber(period.kpis.physicalQuantity)}
+                    </strong>
+                  </p>
                 </div>
-                <p className="mt-3 text-xs text-slate-500">
+                <p className="mt-2 text-xs text-slate-500">
                   {period.startDate} to {period.endDate}
                 </p>
                 <span
-                  className="mt-3 block h-1.5 rounded-full"
+                  className="mt-2.5 block h-1 rounded-full"
                   style={{ backgroundColor: style.indicator }}
                 />
-                <span className="mt-3 flex items-center justify-between text-xs font-bold text-blue-700">
+                <span className="mt-2.5 flex items-center justify-between text-xs font-bold text-blue-700">
                   {isSelected ? 'Hide ABC details' : 'View ABC details'}
                   <ChevronDown
                     aria-hidden="true"
@@ -685,7 +691,7 @@ function ValueAccuracyBanner({
   onSelectPeriod: (periodKey: PeriodKey) => void;
 }) {
   return (
-    <section className="mt-4 overflow-hidden rounded-3xl border border-emerald-200 bg-emerald-50/70 p-5 shadow-sm dark:border-emerald-900 dark:bg-emerald-950/20 sm:p-6">
+    <section className="mt-3 overflow-hidden rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4 shadow-sm dark:border-emerald-900 dark:bg-emerald-950/20 sm:p-5">
       <div className="mb-4">
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700 dark:text-emerald-300">
           COGS KPI
@@ -720,7 +726,7 @@ function ValueAccuracyBanner({
               aria-expanded={isSelected}
               aria-controls="abc-breakdown-panel"
               onClick={() => onSelectPeriod(periodKey)}
-              className={`rounded-2xl border bg-white p-4 text-left shadow-sm transition focus:outline-none focus:ring-4 focus:ring-emerald-300/50 dark:border-emerald-900 ${
+              className={`rounded-xl border bg-white p-3 text-left shadow-sm transition focus:outline-none focus:ring-4 focus:ring-emerald-300/50 dark:border-emerald-900 ${
                 isSelected
                   ? 'border-emerald-400 ring-4 ring-emerald-300/30'
                   : 'border-emerald-100 hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow-md'
@@ -730,16 +736,22 @@ function ValueAccuracyBanner({
                 {period.label}
               </p>
               <p
-                className="mt-2 text-2xl font-black tracking-tight"
+                className="mt-1.5 text-xl font-black tracking-tight"
                 style={{ color: style.text }}
               >
                 {formatPercent(valueAccuracy)}
               </p>
-              <div className="mt-3 space-y-1.5 border-t border-slate-200 pt-3 text-xs">
+              <div className="mt-2 space-y-1 border-t border-slate-200 pt-2 text-xs">
                 <p className="flex items-center justify-between gap-2 text-slate-600">
                   <span className="font-medium">System Value</span>
                   <strong className="text-right text-slate-900">
                     {formatCurrency(period.kpis.systemValue)}
+                  </strong>
+                </p>
+                <p className="flex items-center justify-between gap-2 text-slate-600">
+                  <span className="font-medium">Physical Value</span>
+                  <strong className="text-right text-slate-900">
+                    {formatCurrency(period.kpis.physicalValue)}
                   </strong>
                 </p>
                 <p className="flex items-center justify-between gap-2 text-slate-600">
@@ -750,10 +762,10 @@ function ValueAccuracyBanner({
                 </p>
               </div>
               <span
-                className="mt-3 block h-1.5 rounded-full"
+                className="mt-2.5 block h-1 rounded-full"
                 style={{ backgroundColor: style.indicator }}
               />
-              <span className="mt-3 flex items-center justify-between text-xs font-bold text-emerald-700">
+              <span className="mt-2.5 flex items-center justify-between text-xs font-bold text-emerald-700">
                 {isSelected ? 'Hide ABC details' : 'View ABC details'}
                 <ChevronDown
                   aria-hidden="true"
@@ -822,8 +834,8 @@ function KpiGrid({ kpis }: { kpis: Kpis }) {
   );
 
   return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    <div className="space-y-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <KpiCard
           label="Bin Accuracy"
           value={formatPercent(kpis.binAccuracy)}
@@ -854,7 +866,7 @@ function KpiGrid({ kpis }: { kpis: Kpis }) {
         />
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
       <KpiCard
         label="Inventory Accuracy"
         value={formatPercent(kpis.inventoryAccuracy)}
@@ -1317,7 +1329,7 @@ export default function App() {
             </section>
           ) : null}
 
-          <main className="mx-auto max-w-[1600px] px-4 py-8 sm:px-6 lg:px-8">
+          <main className="mx-auto max-w-[1440px] px-4 py-6 sm:px-5 lg:px-6">
             {activePage === 'kpi' ? (
               <>
             <CycleCoverageBanner
@@ -1330,7 +1342,7 @@ export default function App() {
               onRetry={() => {
                 void cycleCoverageQuery.refetch();
               }}
-              className="mb-6"
+              className="mb-4"
             />
             <QuantityAccuracyBanner
               periods={bannerPeriods || dashboard.periods}
@@ -1359,13 +1371,13 @@ export default function App() {
             <YesterdayActivityNotice
               period={dashboard.periods.yesterday}
             />
-            <div className="mb-6 mt-8 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div className="mb-4 mt-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
               <div>
                 <p className="text-sm font-semibold text-blue-700 dark:text-blue-300">
                   Section 1 ·{' '}
                   {period?.label}
                 </p>
-                <h2 className="mt-1 text-2xl font-bold tracking-tight">
+                <h2 className="mt-1 text-xl font-bold tracking-tight">
                   Executive KPI
                 </h2>
                 <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
@@ -1441,7 +1453,7 @@ export default function App() {
                 <p className="text-sm font-semibold text-blue-700 dark:text-blue-300">
                   Section 2
                 </p>
-                <h2 className="mt-1 text-2xl font-bold tracking-tight">
+                <h2 className="mt-1 text-xl font-bold tracking-tight">
                   Inventory Transactions
                 </h2>
                 <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">

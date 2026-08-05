@@ -34,6 +34,12 @@ function formatPercent(value: number) {
   return `${numberFormatter.format(value)}%`;
 }
 
+function formatSignedPercent(value: number) {
+  if (value === 0) return '0%';
+  const sign = value > 0 ? '+' : '-';
+  return `${sign}${numberFormatter.format(Math.abs(value))}%`;
+}
+
 function formatDate(value: string) {
   const date = new Date(`${value}T12:00:00`);
   if (Number.isNaN(date.getTime())) return value;
@@ -80,12 +86,14 @@ export function CycleCoverageBanner({
   isLoading = false,
   errorMessage = '',
   onRetry,
+  changeAlertThreshold = 5,
   className = ''
 }: {
   latest?: CycleCoverageRow | null;
   isLoading?: boolean;
   errorMessage?: string;
   onRetry?: () => void;
+  changeAlertThreshold?: number;
   className?: string;
 }) {
   if (!latest) {
@@ -125,6 +133,9 @@ export function CycleCoverageBanner({
     );
   }
 
+  const changeThresholdReached =
+    Math.abs(latest.changePercent) >= changeAlertThreshold;
+
   return (
     <section
       className={`overflow-hidden rounded-3xl bg-gradient-to-r from-blue-950 via-blue-900 to-blue-800 p-6 text-white shadow-lg ${className}`}
@@ -141,7 +152,7 @@ export function CycleCoverageBanner({
             As of {formatDate(latest.date)}
           </p>
         </div>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
           <div className="rounded-2xl bg-white/10 px-4 py-3 ring-1 ring-white/15">
             <p className="text-xs text-blue-200">Opening GOOD Qty</p>
             <p className="mt-1 text-lg font-black">
@@ -154,10 +165,30 @@ export function CycleCoverageBanner({
               {formatNumber(latest.totalCumulativeCountedQuantity)}
             </p>
           </div>
-          <div className="col-span-2 rounded-2xl bg-white/10 px-4 py-3 ring-1 ring-white/15 sm:col-span-1">
+          <div className="rounded-2xl bg-white/10 px-4 py-3 ring-1 ring-white/15">
             <p className="text-xs text-blue-200">Counted Today</p>
             <p className="mt-1 text-lg font-black">
               {formatNumber(latest.totalDailyCountedQuantity)}
+            </p>
+          </div>
+          <div
+            className={`rounded-2xl px-4 py-3 ring-1 ${
+              changeThresholdReached
+                ? 'bg-amber-400/20 ring-amber-300/50'
+                : 'bg-white/10 ring-white/15'
+            }`}
+            title={`Alert threshold: absolute change of ${formatPercent(changeAlertThreshold)} or more`}
+          >
+            <p className="text-xs text-blue-200">Inventory Change</p>
+            <p
+              className={`mt-1 text-lg font-black ${
+                changeThresholdReached ? 'text-amber-200' : 'text-white'
+              }`}
+            >
+              {formatSignedPercent(latest.changePercent)}
+            </p>
+            <p className="mt-0.5 text-[10px] text-blue-200">
+              vs previous day · alert ±{formatPercent(changeAlertThreshold)}
             </p>
           </div>
         </div>
@@ -194,7 +225,8 @@ export function CycleCoveragePage({
   errorMessage,
   selectedMonth,
   onMonthChange,
-  onRetry
+  onRetry,
+  changeAlertThreshold
 }: {
   data?: CycleCoverageData;
   isLoading: boolean;
@@ -202,6 +234,7 @@ export function CycleCoveragePage({
   selectedMonth: string;
   onMonthChange: (month: string) => void;
   onRetry: () => void;
+  changeAlertThreshold: number;
 }) {
   if (isLoading && !data) {
     return (
@@ -279,7 +312,11 @@ export function CycleCoveragePage({
         </div>
       ) : null}
 
-      <CycleCoverageBanner latest={latest} className="mt-6" />
+      <CycleCoverageBanner
+        latest={latest}
+        changeAlertThreshold={changeAlertThreshold}
+        className="mt-6"
+      />
 
       {latest.alertNote ? (
         <div className="mt-4 flex items-start gap-3 rounded-2xl border border-amber-300 bg-amber-50 px-5 py-4 text-sm text-amber-950 shadow-sm dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100">
@@ -340,6 +377,8 @@ export function CycleCoveragePage({
             <h3 className="font-black">Day-wise MTD coverage</h3>
             <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
               Every facility cell shows cumulative counted quantity / opening GOOD quantity and completion percentage.
+              Inventory change is highlighted when its absolute movement is{' '}
+              {formatPercent(changeAlertThreshold)} or more versus the previous day.
             </p>
           </div>
         </div>
@@ -351,6 +390,9 @@ export function CycleCoveragePage({
                 <th className="px-4 py-3 text-right">Total Qty</th>
                 <th className="px-4 py-3 text-right">Total Counted</th>
                 <th className="px-4 py-3 text-right">Completion</th>
+                <th className="px-4 py-3 text-right">
+                  Inventory Change %
+                </th>
                 {data.facilities.map((facility) => (
                   <th key={facility} className="px-4 py-3 text-right">
                     {FACILITY_LABELS[facility]}
@@ -359,7 +401,14 @@ export function CycleCoveragePage({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {[...data.rows].reverse().map((row) => (
+              {[...data.rows].reverse().map((row) => {
+                const isFirstCoverageDay =
+                  row.date === data.rows[0]?.date;
+                const thresholdReached =
+                  !isFirstCoverageDay &&
+                  Math.abs(row.changePercent) >= changeAlertThreshold;
+
+                return (
                 <tr key={row.date}>
                   <td className="px-4 py-3 font-semibold">
                     {formatDate(row.date)}
@@ -372,6 +421,26 @@ export function CycleCoveragePage({
                   </td>
                   <td className="px-4 py-3 text-right font-black text-blue-700 dark:text-blue-300">
                     {formatPercent(row.totalCompletionPercent)}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    {isFirstCoverageDay ? (
+                      <span className="text-slate-400">—</span>
+                    ) : (
+                      <span
+                        className={`inline-flex rounded-full px-2.5 py-1 text-xs font-black ${
+                          thresholdReached
+                            ? 'bg-amber-100 text-amber-800 ring-1 ring-amber-300 dark:bg-amber-950/50 dark:text-amber-200 dark:ring-amber-800'
+                            : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200'
+                        }`}
+                        title={
+                          thresholdReached
+                            ? `Threshold of ±${formatPercent(changeAlertThreshold)} reached`
+                            : `Below ±${formatPercent(changeAlertThreshold)} threshold`
+                        }
+                      >
+                        {formatSignedPercent(row.changePercent)}
+                      </span>
+                    )}
                   </td>
                   {data.facilities.map((facility) => {
                     const metrics = row.facilities[facility];
@@ -388,7 +457,8 @@ export function CycleCoveragePage({
                     );
                   })}
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>

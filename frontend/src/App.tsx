@@ -1324,6 +1324,9 @@ export default function App() {
               latest={cycleCoverageQuery.data?.data.latest}
               isLoading={cycleCoverageQuery.isLoading}
               errorMessage={cycleCoverageErrorMessage}
+              changeAlertThreshold={
+                config?.inventoryChangeAlertPercent || 5
+              }
               onRetry={() => {
                 void cycleCoverageQuery.refetch();
               }}
@@ -1488,6 +1491,9 @@ export default function App() {
                 }
                 selectedMonth={coverageMonth}
                 onMonthChange={setCoverageMonth}
+                changeAlertThreshold={
+                  config?.inventoryChangeAlertPercent || 5
+                }
                 onRetry={() => {
                   void cycleCoverageQuery.refetch();
                 }}

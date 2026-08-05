@@ -30,7 +30,7 @@ required during normal operation.
 
 | Data | Google Sheet | Owner action |
 |---|---|---|
-| Current cycle counts | `SL_AMBIENT`, `SL_MH`, `SL_RX`, `OWN`, `B2C` | Enter or upload correctly dated inventory rows. `B2C` is the parent tab for `SL_MM`, `SL_LJ`/`SLLJ`, and `SL_BW`. Do not change the required headers. |
+| Current cycle counts | `SL_AMBIENT`, `SL_MH`, `SL_RX`, `OWN` in `Inventory_Dashboard`; `B2C` in `Bin wise cycle Count-Q2-JAS` | Enter or upload correctly dated inventory rows. `B2C` is the external parent tab for `SL_MM`, `SL_LJ`/`SLLJ`, and `SL_BW`; its `Total` column is treated as System Quantity. Do not change the required headers. |
 | Historical quarter | `Q1-AMJ26` | Maintain April–June 2026 history used for Last Quarter and past-date reporting. |
 | SKU classification | `SKU_MASTER` | Maintain each SKU and enter `A`, `B`, or `C` in `ABC Class`. |
 | Inventory cost | `COGS` | Maintain the SKU unit rate excluding GST. |
@@ -43,9 +43,9 @@ and reduce Cost Coverage.
 
 ## 4. Daily Operating Process
 
-1. Warehouse users complete the cycle count and update the correct facility
-   sheet with Date, Rack, SKU, Shelf, Batch, Physical Quantity, System Quantity,
-   Difference, and Remark.
+1. Warehouse users complete the cycle count and update the correct source. The
+   external `B2C` tab records Facility, Date, SKU, Shelf, Batch, `Total`, `Phy`,
+   and `Diff.`; the other four source tabs retain their standard layout.
 2. The master-data owner maintains missing ABC classifications in `SKU_MASTER`
    and missing unit rates in `COGS`.
 3. Google Apps Script refreshes the dashboard cache automatically using the

@@ -73,11 +73,16 @@ opening quantity and coverage percentage. `BAD_INVENTORY` and `QC_REJECTED`
 quantities are stored separately for audit but are not displayed and never
 enter the completion calculation.
 
-The daily cycle-count source tab is `B2C`. It is only a parent sheet
-name. Its new `Facility` or `Facility Name` column must contain `SL_MM`,
+The daily cycle-count source tab is `B2C` in the separate
+[Bin wise cycle Count-Q2-JAS workbook](https://docs.google.com/spreadsheets/d/1_kBrwiM6ezFeE5kJFqeCMKcl7p_pe_XpNuVYhUmkUpw/edit?gid=2112925392).
+It is only a parent sheet name. Its `Facility` column must contain `SL_MM`,
 `SL_LJ`/`SLLJ`, or `SL_BW`. `B2C` itself is never displayed as a facility. Blank
 or unsupported values are skipped and listed by
 `testB2cFacilityMapping()`.
+
+The B2C layout uses `Total` as System Quantity, `Phy` as Physical Quantity,
+and `Diff.` as Difference. It does not need separate `Rack` or `Remark`
+columns; `Shelf` remains the unique bin identifier for B2C reporting.
 
 This is separate from the daily inventory CSV. The CSV contains the facility
 names `SL MM`, `SLLJ`, and `SL BW`; it is not expected to contain a facility
@@ -305,7 +310,7 @@ Open:
 
 [Inventory_Dashboard Google Sheet](https://docs.google.com/spreadsheets/d/1uB9hiqI8z46_fYxiB1syRwNNw0TM_ZV2NCYZcAVmWIk/edit)
 
-## 2. Check the five current inventory sheets
+## 2. Check the five current inventory sources
 
 The backend reads:
 
@@ -313,15 +318,22 @@ The backend reads:
 - `SL_MH`
 - `SL_RX`
 - `OWN`
-- `B2C`
+- external workbook tab `B2C`
 
-Each source sheet must use this header row:
+The four `Inventory_Dashboard` source sheets must use this header row:
 
 ```text
 Date | Rack | Sku Code | Item Name | Shelf | Batch | Vendor Batch Number | Pack | Box | Loose | Phy | Sys | Diff | Remark
 ```
 
-The `B2C` sheet also requires a `Facility` or `Facility Name` column.
+The external `B2C` tab uses:
+
+```text
+Facility | Date | Sku Code | Item Name | Shelf | Batch | Vendor Batch number | Total | Blocked | Not Found | Pack | Box | Loose | Phy | Diff.
+```
+
+For B2C only, the backend maps `Total` to System Quantity and accepts only
+`SL_MM`, `SL_LJ`/`SLLJ`, and `SL_BW` from the Facility column.
 
 Header matching ignores case, extra spaces, and periods, so `Diff` and `Diff.`
 are both accepted.

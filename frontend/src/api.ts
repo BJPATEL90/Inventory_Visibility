@@ -2,6 +2,7 @@ import type {
   ActivityStatus,
   ApiResponse,
   BinMasterRow,
+  CycleCoverageData,
   DashboardConfig,
   DashboardData,
   SkuMasterRow,
@@ -14,6 +15,7 @@ const APPS_SCRIPT_URL = String(
 ).trim();
 const DASHBOARD_SNAPSHOT_KEY = 'inventory-dashboard-snapshot-v1';
 const CONFIG_SNAPSHOT_KEY = 'inventory-config-snapshot-v1';
+const CYCLE_COVERAGE_SNAPSHOT_KEY = 'inventory-cycle-coverage-v2';
 
 interface StoredSnapshot<T> {
   savedAt: string;
@@ -205,6 +207,18 @@ export function getCachedConfig() {
 export async function getConfig() {
   const response = await request<DashboardConfig>('config');
   saveSnapshot(CONFIG_SNAPSHOT_KEY, response);
+  return response;
+}
+
+export function getCachedCycleCoverage() {
+  return readSnapshot<CycleCoverageData>(CYCLE_COVERAGE_SNAPSHOT_KEY);
+}
+
+export async function getCycleCoverage(month = '') {
+  const response = await request<CycleCoverageData>('cycleCoverage', {
+    month
+  });
+  saveSnapshot(CYCLE_COVERAGE_SNAPSHOT_KEY, response);
   return response;
 }
 

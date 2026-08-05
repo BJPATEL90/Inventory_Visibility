@@ -125,6 +125,55 @@ export interface DashboardConfig {
   emailSendHour: number;
   dashboardUrl: string;
   theme: string;
+  coverageCycleStartDate: string;
+  coverageCycleMonths: number;
+  inventoryImportMinutes: number;
+  inventoryChangeAlertPercent: number;
+  inventoryEmailSender: string;
+  inventoryEmailSubject: string;
+  inventoryExportName: string;
+}
+
+export type CoverageFacilityKey =
+  | 'SL_AMBIENT'
+  | 'SL_MH'
+  | 'SL_RX'
+  | 'SL_MM'
+  | 'SL_LJ'
+  | 'SL_BW'
+  | 'OWN';
+
+export interface CoverageFacilityMetrics {
+  goodQuantity: number;
+  dailyCountedQuantity: number;
+  cumulativeCountedQuantity: number;
+  completionPercent: number;
+}
+
+export interface CycleCoverageRow {
+  date: string;
+  facilities: Record<CoverageFacilityKey, CoverageFacilityMetrics>;
+  totalGoodQuantity: number;
+  totalDailyCountedQuantity: number;
+  totalCumulativeCountedQuantity: number;
+  totalCompletionPercent: number;
+  changeQuantity: number;
+  changePercent: number;
+  alertNote: string;
+  sourceFile: string;
+  importedAt: string;
+  importStatus: string;
+}
+
+export interface CycleCoverageData {
+  setupRequired: boolean;
+  cycleStartDate: string;
+  cycleEndDate: string;
+  selectedMonth: string;
+  availableMonths: string[];
+  facilities: CoverageFacilityKey[];
+  rows: CycleCoverageRow[];
+  latest: CycleCoverageRow | null;
 }
 
 export interface InventoryTransaction {

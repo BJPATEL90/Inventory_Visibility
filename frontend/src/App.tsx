@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   AlertCircle,
+  BarChart3,
   Boxes,
   CheckCircle2,
   ChevronDown,
@@ -20,15 +21,17 @@ import {
   downloadTransactionsCsv,
   getActivityStatus,
   getBinMaster,
+  getCachedCycleCoverage,
   getCachedConfig,
   getCachedDashboard,
   getConfig,
+  getCycleCoverage,
   getDashboard,
-  getFacilityDashboard,
   getSkuMaster,
   getTransactions
 } from './api';
 import { FilterBar } from './components/FilterBar';
+import { CycleCoveragePage } from './components/CycleCoveragePage';
 import { InventoryTable } from './components/InventoryTable';
 import { KpiCard } from './components/KpiCard';
 import {
@@ -60,6 +63,8 @@ const PERIOD_KEYS: PeriodKey[] = [
   'monthToDate',
   'yesterday'
 ];
+
+type DashboardPage = 'kpi' | 'transactions' | 'facilityProgress';
 
 function useDebouncedValue<T>(value: T, delay: number) {
   const [debouncedValue, setDebouncedValue] = useState(value);
@@ -265,66 +270,89 @@ function ErrorState({
   );
 }
 
-function SectionNavigation() {
+function SectionNavigation({
+  activePage,
+  onChange
+}: {
+  activePage: DashboardPage;
+  onChange: (page: DashboardPage) => void;
+}) {
   const links = [
     {
-      href: '#kpi-section',
-      label: '1. KPI',
-      description: 'Accuracy cards and ABC details',
+      page: 'kpi' as const,
+      label: 'Executive KPI',
+      description: 'Accuracy and KPI cards',
       icon: Gauge
     },
     {
-      href: '#transactions-section',
-      label: '2. Inventory Transactions',
+      page: 'transactions' as const,
+      label: 'Inventory Transactions',
       description: 'Search and CSV download',
       icon: Database
     },
-    ...(SHOW_MASTERS
-      ? [
-          {
-            href: '#masters-section',
-            label: '3. Bin & SKU Masters',
-            description: 'Read-only master data',
-            icon: Warehouse
-          }
-        ]
-      : [])
+    {
+      page: 'facilityProgress' as const,
+      label: 'Facility MTD Progress',
+      description: 'Inventory and count coverage',
+      icon: BarChart3
+    }
   ];
 
   return (
-    <nav
-      aria-label="Dashboard sections"
-      className="border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900"
+    <aside
+      className="shrink-0 border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 lg:min-h-[calc(100vh-113px)] lg:w-64 lg:border-b-0 lg:border-r"
     >
-      <div
-        className={`mx-auto grid max-w-[1600px] grid-cols-1 gap-3 px-4 py-4 sm:px-6 lg:px-8 ${
-          SHOW_MASTERS ? 'sm:grid-cols-3' : 'sm:grid-cols-2'
-        }`}
+      <nav
+        aria-label="Dashboard pages"
+        className="flex gap-2 overflow-x-auto px-4 py-4 lg:sticky lg:top-0 lg:flex-col lg:px-3 lg:py-6"
       >
         {links.map((link) => {
           const Icon = link.icon;
+          const isActive = activePage === link.page;
           return (
-            <a
-              key={link.href}
-              href={link.href}
-              className="group flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 transition hover:border-blue-300 hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:border-slate-700 dark:bg-slate-950 dark:hover:border-blue-700 dark:hover:bg-blue-950/40"
+            <button
+              type="button"
+              key={link.page}
+              onClick={() => onChange(link.page)}
+              aria-current={isActive ? 'page' : undefined}
+              className={`group flex min-w-56 items-center gap-3 rounded-xl border px-4 py-3 text-left transition focus:outline-none focus:ring-2 focus:ring-blue-500/30 lg:min-w-0 ${
+                isActive
+                  ? 'border-blue-700 bg-blue-700 text-white shadow-sm'
+                  : 'border-slate-200 bg-slate-50 hover:border-blue-300 hover:bg-blue-50 dark:border-slate-700 dark:bg-slate-950 dark:hover:border-blue-700 dark:hover:bg-blue-950/40'
+              }`}
             >
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-100 text-blue-700 group-hover:bg-blue-700 group-hover:text-white dark:bg-blue-950 dark:text-blue-300">
+              <span
+                className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
+                  isActive
+                    ? 'bg-white/15 text-white'
+                    : 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300'
+                }`}
+              >
                 <Icon aria-hidden="true" className="h-5 w-5" />
               </span>
               <span className="min-w-0">
-                <span className="block text-sm font-bold text-slate-900 dark:text-white">
+                <span
+                  className={`block text-sm font-bold ${
+                    isActive ? 'text-white' : 'text-slate-900 dark:text-white'
+                  }`}
+                >
                   {link.label}
                 </span>
-                <span className="mt-0.5 block text-xs text-slate-500 dark:text-slate-400">
+                <span
+                  className={`mt-0.5 block text-xs ${
+                    isActive
+                      ? 'text-blue-100'
+                      : 'text-slate-500 dark:text-slate-400'
+                  }`}
+                >
                   {link.description}
                 </span>
               </span>
-            </a>
+            </button>
           );
         })}
-      </div>
-    </nav>
+      </nav>
+    </aside>
   );
 }
 
@@ -864,6 +892,8 @@ function KpiGrid({ kpis }: { kpis: Kpis }) {
 }
 
 export default function App() {
+  const [activePage, setActivePage] = useState<DashboardPage>('kpi');
+  const [coverageMonth, setCoverageMonth] = useState('');
   const [filters, setFilters] =
     useState<DashboardFilters>({ ...EMPTY_FILTERS });
   const [darkMode, setDarkMode] = useState(() => {
@@ -935,18 +965,12 @@ export default function App() {
       tableSortDirection
     ],
     queryFn: () => getTransactions(transactionParameters),
-    enabled: Boolean(transactionStartDate && transactionEndDate),
+    enabled:
+      activePage === 'transactions' &&
+      Boolean(transactionStartDate && transactionEndDate),
     refetchInterval: refreshInterval,
     retry: 1,
     placeholderData: (previousData) => previousData
-  });
-
-  const facilityDashboardQuery = useQuery({
-    queryKey: ['facilityDashboard', filters.facility],
-    queryFn: () => getFacilityDashboard(filters.facility),
-    enabled: Boolean(filters.facility),
-    refetchInterval: refreshInterval,
-    retry: 1
   });
 
   const binMasterQuery = useQuery({
@@ -965,12 +989,23 @@ export default function App() {
     retry: 1
   });
 
+  const cycleCoverageQuery = useQuery({
+    queryKey: ['cycleCoverage', coverageMonth],
+    queryFn: () => getCycleCoverage(coverageMonth),
+    initialData: coverageMonth ? undefined : getCachedCycleCoverage,
+    enabled: activePage === 'facilityProgress',
+    refetchInterval: refreshInterval,
+    retry: 1
+  });
+
   const transactionPage = transactionsQuery.data?.data;
   const transactions = transactionPage?.rows || [];
   const binMaster = binMasterQuery.data?.data || [];
   const skuMaster = skuMasterQuery.data?.data || [];
-  const filtersAreActive = hasActiveFilters(filters);
-  const dimensionFiltersAreActive = hasDimensionFilters(filters);
+  const filtersAreActive =
+    activePage === 'transactions' && hasActiveFilters(filters);
+  const dimensionFiltersAreActive =
+    activePage === 'transactions' && hasDimensionFilters(filters);
   const filterOptions = {
     facilities: transactionPage?.facilities || [],
     racks: [],
@@ -978,11 +1013,13 @@ export default function App() {
     batches: [],
     remarks: []
   };
-  const visibleKpis = transactionPage?.kpis || null;
-  const selectedRowCount = transactionPage?.selectedRowCount || 0;
-  const bannerPeriods = filters.facility
-    ? facilityDashboardQuery.data?.data.periods || dashboard?.periods
-    : dashboard?.periods;
+  const visibleKpis = activePage === 'kpi'
+    ? dashboard?.periods.monthToDate.kpis || null
+    : transactionPage?.kpis || null;
+  const selectedRowCount = activePage === 'kpi'
+    ? dashboard?.periods.monthToDate.rowCount || 0
+    : transactionPage?.selectedRowCount || 0;
+  const bannerPeriods = dashboard?.periods;
   const selectedAbcPeriodData =
     selectedAbcPeriod && bannerPeriods
       ? bannerPeriods[selectedAbcPeriod]
@@ -992,6 +1029,7 @@ export default function App() {
     queryKey: ['activityStatus', filters.date],
     queryFn: () => getActivityStatus(filters.date),
     enabled:
+      activePage === 'transactions' &&
       Boolean(filters.date) &&
       !transactionsQuery.isLoading &&
       !transactionsQuery.error &&
@@ -1045,20 +1083,23 @@ export default function App() {
   const isRefreshing =
     configQuery.isFetching ||
     dashboardQuery.isFetching ||
-    transactionsQuery.isFetching ||
-    (Boolean(filters.facility) && facilityDashboardQuery.isFetching) ||
+    (activePage === 'transactions' && transactionsQuery.isFetching) ||
+    (activePage === 'facilityProgress' && cycleCoverageQuery.isFetching) ||
     (SHOW_MASTERS &&
       (binMasterQuery.isFetching || skuMasterQuery.isFetching));
 
   function retryAll() {
     const requests: Promise<unknown>[] = [
       configQuery.refetch(),
-      dashboardQuery.refetch(),
-      transactionsQuery.refetch()
+      dashboardQuery.refetch()
     ];
 
-    if (filters.facility) {
-      requests.push(facilityDashboardQuery.refetch());
+    if (activePage === 'transactions') {
+      requests.push(transactionsQuery.refetch());
+    }
+
+    if (activePage === 'facilityProgress') {
+      requests.push(cycleCoverageQuery.refetch());
     }
 
     if (SHOW_MASTERS) {
@@ -1143,12 +1184,16 @@ export default function App() {
     dashboardQuery.data?.lastRefreshTime ||
     transactionsQuery.data?.lastRefreshTime;
   const transactionInitialLoading =
-    transactionsQuery.isLoading && !transactionPage;
-  const transactionErrorMessage = transactionsQuery.error instanceof Error
-    ? transactionsQuery.error.message
-    : transactionsQuery.error
-      ? 'The selected transaction data could not be loaded.'
-      : '';
+    activePage === 'transactions' &&
+    transactionsQuery.isLoading &&
+    !transactionPage;
+  const transactionErrorMessage = activePage === 'transactions'
+    ? transactionsQuery.error instanceof Error
+      ? transactionsQuery.error.message
+      : transactionsQuery.error
+        ? 'The selected transaction data could not be loaded.'
+        : ''
+    : '';
 
   let emptyTitle = 'No inventory data found';
   let emptyMessage =
@@ -1215,15 +1260,24 @@ export default function App() {
           </p>
         </div>
       ) : (
-        <>
-          <SectionNavigation />
-
-          <FilterBar
-            filters={filters}
-            options={filterOptions}
-            onChange={updateFilter}
-            onClear={clearFilters}
+        <div className="lg:flex">
+          <SectionNavigation
+            activePage={activePage}
+            onChange={(page) => {
+              setActivePage(page);
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
           />
+
+          <div className="min-w-0 flex-1">
+            {activePage === 'transactions' ? (
+              <FilterBar
+                filters={filters}
+                options={filterOptions}
+                onChange={updateFilter}
+                onClear={clearFilters}
+              />
+            ) : null}
 
           {backgroundDataError ? (
             <section
@@ -1253,6 +1307,8 @@ export default function App() {
           ) : null}
 
           <main className="mx-auto max-w-[1600px] px-4 py-8 sm:px-6 lg:px-8">
+            {activePage === 'kpi' ? (
+              <>
             <QuantityAccuracyBanner
               periods={bannerPeriods || dashboard.periods}
               selectedPeriod={selectedAbcPeriod}
@@ -1284,9 +1340,7 @@ export default function App() {
               <div>
                 <p className="text-sm font-semibold text-blue-700 dark:text-blue-300">
                   Section 1 ·{' '}
-                  {filters.date
-                    ? `Selected date: ${filters.date}`
-                    : period?.label}
+                  {period?.label}
                 </p>
                 <h2 className="mt-1 text-2xl font-bold tracking-tight">
                   Executive KPI
@@ -1352,10 +1406,13 @@ export default function App() {
             ) : visibleKpis ? (
               <KpiGrid kpis={visibleKpis} />
             ) : null}
+              </>
+            ) : null}
 
+            {activePage === 'transactions' ? (
             <section
               id="transactions-section"
-              className="mt-10 scroll-mt-80 xl:scroll-mt-32"
+              className="scroll-mt-80 xl:scroll-mt-32"
             >
               <div className="mb-5">
                 <p className="text-sm font-semibold text-blue-700 dark:text-blue-300">
@@ -1368,6 +1425,11 @@ export default function App() {
                   Search, sort, paginate, and download the filtered rows as CSV.
                 </p>
               </div>
+              {visibleKpis && selectedRowCount > 0 ? (
+                <div className="mb-8">
+                  <KpiGrid kpis={visibleKpis} />
+                </div>
+              ) : null}
               {transactionErrorMessage ? (
                 <div className="rounded-2xl border border-red-200 bg-red-50 px-6 py-8 text-center text-sm text-red-800 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
                   Transaction table unavailable. Use the retry button in
@@ -1395,6 +1457,26 @@ export default function App() {
                 />
               )}
             </section>
+            ) : null}
+
+            {activePage === 'facilityProgress' ? (
+              <CycleCoveragePage
+                data={cycleCoverageQuery.data?.data}
+                isLoading={cycleCoverageQuery.isLoading}
+                errorMessage={
+                  cycleCoverageQuery.error instanceof Error
+                    ? cycleCoverageQuery.error.message
+                    : cycleCoverageQuery.error
+                      ? 'The facility progress request failed.'
+                      : ''
+                }
+                selectedMonth={coverageMonth}
+                onMonthChange={setCoverageMonth}
+                onRetry={() => {
+                  void cycleCoverageQuery.refetch();
+                }}
+              />
+            ) : null}
 
             {SHOW_MASTERS ? (
               <section
@@ -1433,7 +1515,8 @@ export default function App() {
               </section>
             ) : null}
           </main>
-        </>
+          </div>
+        </div>
       )}
     </div>
   );

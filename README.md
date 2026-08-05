@@ -25,7 +25,121 @@ Google temporarily returns a Web App error, the saved dashboard remains visible
 with a warning and Retry button. A new browser or cleared browser storage needs
 one successful load before this fallback is available.
 
-## Current release
+## V1 production and local V2
+
+The published GitHub Pages dashboard and Apps Script deployment remain the
+stable **V1 production release**. Development for quantity cycle-coverage is
+kept on the local branch `codex/v2-cycle-coverage`. Do not publish that branch
+or replace the Apps Script Web App deployment until the V2 test checklist has
+passed and final deployment is approved.
+
+V2 adds three separate frontend pages using a left navigation panel:
+
+1. **Executive KPI** - the landing page contains KPI cards only. Clicking a
+   four-period accuracy card can still open its ABC detail.
+2. **Inventory Transactions** - date/facility filters, detailed KPIs, search,
+   sorting, pagination, and CSV download.
+3. **Facility MTD Progress** - facility cards, a 0%-100% progress bar, opening
+   GOOD quantity, cumulative counted quantity, and a day-wise MTD table.
+
+The Inventory Transactions request is not started on the landing page. This
+allows the saved KPI snapshot to appear first and reduces initial page work.
+
+### V2 inventory email rules
+
+Apps Script searches Gmail for:
+
+- Sender: `noreply@e.unicommerce.com`
+- Subject: `Export Job Complete - All facility Shelfwise Inventory`
+- Export name: `Shelf inventory ALL 9AM`
+- Status: `SUCCESSFUL`
+
+The script reads the CloudFront CSV hyperlink in the email body. It includes
+only these exact inventory-export facilities:
+
+- `SL Ambient` -> `SL_AMBIENT`
+- `SL Mother Hub` -> `SL_MH`
+- `SL RX` -> `SL_RX`
+- `SL MM` -> `SL_MM`
+- `SL LJ` -> `SL_LJ`
+- `SL BW` -> `SL_BW`
+- exact `OWN` -> `OWN`
+
+Facilities such as `OWN B2B`, `OWN Beyond BLR`, and other `OWN ...` names are
+not included.
+
+Only the CSV `Quantity` column is summed. `GOOD_INVENTORY` drives the displayed
+opening quantity and coverage percentage. `BAD_INVENTORY` and `QC_REJECTED`
+quantities are stored separately for audit but are not displayed and never
+enter the completion calculation.
+
+The daily cycle-count source tab remains `SL_B2C`. It is only a parent sheet
+name. Its new `Facility` or `Facility Name` column must contain `SL_MM`,
+`SL_LJ`, or `SL_BW`. `SL_B2C` itself is never displayed as a facility. Blank or
+unsupported values are skipped and listed by `testSlB2cFacilityMapping()`.
+
+### V2 quantity completion formula
+
+```text
+Cumulative Counted Quantity
+= Sum of cycle-count System Quantity from the cycle start through the date
+
+Quantity Completion %
+= Cumulative Counted Quantity / that date's opening GOOD Quantity x 100
+```
+
+The progress-bar width stops visually at 100%, but the number remains visible
+if data quality or repeat counting produces a result above 100%.
+
+### Hidden system sheet
+
+Running `setupApplication()` creates and hides `Cycle_Coverage_System`. Dates
+are stored in rows. Each facility has columns for opening GOOD quantity, daily
+counted quantity, cumulative counted quantity, completion percentage, BAD
+quantity, and QC rejected quantity. The same row also stores the inventory
+change note, source filename, source URL, Gmail Message ID, import time, and
+import status.
+
+To inspect it in Google Sheets, open **View > Hidden sheets >
+Cycle_Coverage_System**. Do not enter data manually. Re-hide it by right-clicking
+the sheet tab and selecting **Hide sheet**.
+
+`setupApplication()` also adds these missing Config settings without replacing
+existing values:
+
+| Setting | Initial value |
+| --- | --- |
+| Coverage Cycle Start Date | `2026-08-01` |
+| Coverage Cycle Months | `3` |
+| Inventory Import Minutes | `30` |
+| Inventory Change Alert % | `5` |
+| Inventory Email Sender | `noreply@e.unicommerce.com` |
+| Inventory Email Subject | `Export Job Complete - All facility Shelfwise Inventory` |
+| Inventory Export Name | `Shelf inventory ALL 9AM` |
+
+The import trigger checks Gmail every configured number of minutes. Gmail
+Message IDs prevent duplicate imports. When the total opening GOOD quantity
+changes by at least the configured alert percentage, the Facility MTD Progress
+page displays the increase/decrease note.
+
+### V2 Apps Script test order
+
+Do not change the production deployment while testing V2. In the Apps Script
+editor, use the following order when a V2 test copy or approved head test is
+available:
+
+1. Run `testCycleCoverageCalculations()` - it changes nothing and verifies
+   exact OWN, inventory-type separation, and counted-quantity grouping.
+2. Run `testSlB2cFacilityMapping()` - it changes nothing and prints accepted
+   SL_MM/SL_LJ/SL_BW row counts plus skipped source row numbers.
+3. Run `setupApplication()` - it adds the optional Config rows, creates the
+   hidden system sheet, and creates the Gmail import trigger.
+4. Run `importLatestInventoryEmail()` - approve Gmail and external-request
+   permissions, then check the execution log.
+5. Run `testCycleCoverageApi()` - confirm the MTD dates, facility totals, and
+   completion percentages returned to the frontend.
+
+## Current V1 production release
 
 The current frontend contains two visible sections:
 

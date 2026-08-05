@@ -97,6 +97,51 @@ const CONFIG_DEFAULTS = [
   ['Theme', 'Light']
 ];
 
+// Version 2 coverage settings are optional until setupApplication() is run.
+// This keeps the existing V1 dashboard safe while V2 is tested locally.
+const CYCLE_COVERAGE_CONFIG_DEFAULTS = [
+  ['Coverage Cycle Start Date', '2026-08-01'],
+  ['Coverage Cycle Months', 3],
+  ['Inventory Import Minutes', 30],
+  ['Inventory Change Alert %', 5],
+  ['Inventory Email Sender', 'noreply@e.unicommerce.com'],
+  [
+    'Inventory Email Subject',
+    'Export Job Complete - All facility Shelfwise Inventory'
+  ],
+  ['Inventory Export Name', 'Shelf inventory ALL 9AM']
+];
+
+const CYCLE_COVERAGE_SHEET_NAME = 'Cycle_Coverage_System';
+const INVENTORY_IMPORT_HANDLER = 'importLatestInventoryEmail';
+const INVENTORY_EMAIL_SEARCH_DAYS = 14;
+const COVERAGE_FACILITIES = [
+  'SL_AMBIENT',
+  'SL_MH',
+  'SL_RX',
+  'SL_MM',
+  'SL_LJ',
+  'SL_BW',
+  'OWN'
+];
+const INVENTORY_EXPORT_FACILITY_MAP = {
+  'SL AMBIENT': 'SL_AMBIENT',
+  'SL MOTHER HUB': 'SL_MH',
+  'SL RX': 'SL_RX',
+  'SL MM': 'SL_MM',
+  'SL LJ': 'SL_LJ',
+  'SL BW': 'SL_BW',
+  'OWN': 'OWN'
+};
+const SL_B2C_FACILITY_MAP = {
+  'SL MM': 'SL_MM',
+  'SL_MM': 'SL_MM',
+  'SL LJ': 'SL_LJ',
+  'SL_LJ': 'SL_LJ',
+  'SL BW': 'SL_BW',
+  'SL_BW': 'SL_BW'
+};
+
 const ACTIVITY_REASONS = [
   'Sunday',
   'Public Holiday',
@@ -150,9 +195,11 @@ function doGet(e) {
       data = getConfig();
     } else if (action === 'activitystatus') {
       data = getActivityStatus(parameters.date || '');
+    } else if (action === 'cyclecoverage') {
+      data = getCycleCoverage(parameters.month || '');
     } else {
       throw new Error(
-        'Unknown action. Use dashboard, transactions, transactionsCsv, facilityDashboard, binMaster, skuMaster, config, or activityStatus.'
+        'Unknown action. Use dashboard, transactions, transactionsCsv, facilityDashboard, binMaster, skuMaster, config, activityStatus, or cycleCoverage.'
       );
     }
 
@@ -183,9 +230,11 @@ function setupApplication() {
 
   setupConfigSheet_(spreadsheet);
   setupActivityStatusSheet_(spreadsheet);
+  setupCycleCoverageSheet_(spreadsheet);
 
   const triggerResult = createRefreshTrigger();
   const emailTriggerResult = createDailyEmailTrigger();
+  const inventoryImportTriggerResult = createInventoryImportTrigger();
   const dashboard = refreshDashboardCache();
 
   const result = {
@@ -193,6 +242,7 @@ function setupApplication() {
     spreadsheetName: spreadsheet.getName(),
     refreshTrigger: triggerResult,
     dailyEmailTrigger: emailTriggerResult,
+    inventoryImportTrigger: inventoryImportTriggerResult,
     combinedRowCount: dashboard.sourceSummary.combinedRowCount,
     rowsByFacility: dashboard.sourceSummary.rowsByFacility,
     skippedSourceSheets: dashboard.sourceSummary.skippedSourceSheets
@@ -271,7 +321,48 @@ function getConfig() {
       23
     ),
     dashboardUrl: requiredTextSetting_(settings, 'Dashboard URL'),
-    theme: requiredTextSetting_(settings, 'Theme')
+    theme: requiredTextSetting_(settings, 'Theme'),
+    coverageCycleStartDate: optionalTextSetting_(
+      settings,
+      'Coverage Cycle Start Date',
+      '2026-08-01'
+    ),
+    coverageCycleMonths: optionalNumberSetting_(
+      settings,
+      'Coverage Cycle Months',
+      3,
+      1,
+      12
+    ),
+    inventoryImportMinutes: optionalNumberSetting_(
+      settings,
+      'Inventory Import Minutes',
+      30,
+      1,
+      60
+    ),
+    inventoryChangeAlertPercent: optionalNumberSetting_(
+      settings,
+      'Inventory Change Alert %',
+      5,
+      0,
+      100
+    ),
+    inventoryEmailSender: optionalTextSetting_(
+      settings,
+      'Inventory Email Sender',
+      'noreply@e.unicommerce.com'
+    ),
+    inventoryEmailSubject: optionalTextSetting_(
+      settings,
+      'Inventory Email Subject',
+      'Export Job Complete - All facility Shelfwise Inventory'
+    ),
+    inventoryExportName: optionalTextSetting_(
+      settings,
+      'Inventory Export Name',
+      'Shelf inventory ALL 9AM'
+    )
   };
 }
 
@@ -282,7 +373,8 @@ function getConfig() {
  * - Missing, empty, and header-only sheets are skipped.
  * - The first row is treated as the header.
  * - Blank rows are ignored.
- * - Facility is added from the source sheet name.
+ * - Facility is added from the source sheet name, except SL_B2C.
+ * - SL_B2C uses its Facility column for SL_MM, SL_LJ, or SL_BW.
  * - The existing physical Combine sheet is not read or changed.
  *
  * The live source sheets use "Diff." while the requested logical name is
@@ -299,6 +391,7 @@ function getCombinedData(
   const costMap = optionalCostMap || readCostMap_(spreadsheet);
   const abcClassMap = optionalAbcClassMap || {};
   const timeZone = getTimeZone_();
+  const skippedSlB2cFacilityRows = [];
 
   SOURCE_SHEETS.forEach(function (sheetName) {
     const sheet = spreadsheet.getSheetByName(sheetName);
@@ -308,7 +401,7 @@ function getCombinedData(
     }
 
     const values = sheet
-      .getRange(1, 1, sheet.getLastRow(), INVENTORY_HEADERS.length)
+      .getRange(1, 1, sheet.getLastRow(), sheet.getLastColumn())
       .getValues();
     const indexes = inventoryHeaderIndexes_(values[0], sheetName);
 
@@ -316,6 +409,23 @@ function getCombinedData(
       const row = values[rowIndex];
 
       if (inventoryRowIsBlank_(row, indexes)) {
+        continue;
+      }
+
+      const facility = sourceFacilityName_(
+        sheetName,
+        indexes.Facility === undefined
+          ? ''
+          : row[indexes.Facility]
+      );
+
+      // SL_B2C is only a parent sheet name. Rows without one of the three
+      // approved facility values are intentionally excluded instead of being
+      // incorrectly reported as an SL_B2C facility.
+      if (!facility) {
+        if (sheetName === 'SL_B2C') {
+          skippedSlB2cFacilityRows.push(rowIndex + 1);
+        }
         continue;
       }
 
@@ -340,7 +450,8 @@ function getCombinedData(
       combinedRows.push(normalizeNtfShortage_({
         id: sheetName + '-' + String(rowIndex + 1),
         sourceType: 'current',
-        facility: sheetName,
+        sourceSheet: sheetName,
+        facility: facility,
         date: normalizeDate_(row[indexes['Date']], timeZone),
         rack: cleanText_(row[indexes['Rack']]),
         skuCode: skuCode,
@@ -373,6 +484,15 @@ function getCombinedData(
       }));
     }
   });
+
+  if (skippedSlB2cFacilityRows.length > 0) {
+    console.warn(JSON.stringify({
+      sourceSheet: 'SL_B2C',
+      reason: 'Blank or unsupported Facility value',
+      skippedRowCount: skippedSlB2cFacilityRows.length,
+      firstSkippedRowNumbers: skippedSlB2cFacilityRows.slice(0, 100)
+    }));
+  }
 
   return combinedRows;
 }
@@ -1494,6 +1614,7 @@ function refreshDashboardCache() {
   try {
     const inventoryData = getAllInventoryData_();
     const dashboard = buildDashboard_(inventoryData);
+    refreshCycleCoverageSystemSafely_(inventoryData.currentRows);
     const refreshTime = new Date().toISOString();
     const scriptCache = CacheService.getScriptCache();
 
@@ -1628,6 +1749,7 @@ function sendInventoryEmail() {
 
   const inventoryData = getAllInventoryData_();
   const dashboard = buildDashboard_(inventoryData);
+  refreshCycleCoverageSystemSafely_(inventoryData.currentRows);
   const period = dashboard.periods.yesterday;
   const quarterCsv = buildQuarterCsvAttachment_(
     inventoryData.allRows,
@@ -1737,6 +1859,138 @@ function testEmailPreview() {
     },
     dashboardUrl: report.dashboardUrl,
     htmlLength: html.length
+  };
+
+  console.log(JSON.stringify(result, null, 2));
+  return result;
+}
+
+/**
+ * Tests the V2 inventory-type and facility rules without reading Gmail or
+ * changing Google Sheets. Run this first after pasting the V2 Code.gs file.
+ */
+function testCycleCoverageCalculations() {
+  const sampleCsv = [
+    'Facility,Inventory Type,Quantity',
+    'SL Ambient,GOOD_INVENTORY,100',
+    'SL Ambient,BAD_INVENTORY,7',
+    'SL Ambient,QC_REJECTED,3',
+    'SL MM,GOOD_INVENTORY,50',
+    'OWN,GOOD_INVENTORY,25',
+    'OWN B2B,GOOD_INVENTORY,999'
+  ].join('\r\n');
+  const parsed = parseInventoryExportCsv_(sampleCsv);
+  const counts = coverageCountedQuantitiesByDate_([
+    {
+      date: '2026-08-01',
+      facility: 'SL_MM',
+      systemQuantity: 10
+    },
+    {
+      date: '2026-08-02',
+      facility: 'SL_MM',
+      systemQuantity: 15
+    },
+    {
+      date: '2026-08-02',
+      facility: 'SL_AMBIENT',
+      systemQuantity: 20
+    }
+  ], '2026-08-01');
+
+  assertEqual_(
+    parsed.facilities.SL_AMBIENT.goodQuantity,
+    100,
+    'SL Ambient GOOD Quantity'
+  );
+  assertEqual_(
+    parsed.facilities.SL_AMBIENT.badQuantity,
+    7,
+    'SL Ambient BAD Quantity'
+  );
+  assertEqual_(
+    parsed.facilities.SL_AMBIENT.qcRejectedQuantity,
+    3,
+    'SL Ambient QC Quantity'
+  );
+  assertEqual_(parsed.facilities.SL_MM.goodQuantity, 50, 'SL MM GOOD');
+  assertEqual_(parsed.facilities.OWN.goodQuantity, 25, 'Exact OWN GOOD');
+  assertEqual_(parsed.ignoredFacilityRowCount, 1, 'OWN child exclusion');
+  assertEqual_(counts['2026-08-01'].SL_MM, 10, 'Day 1 counted qty');
+  assertEqual_(counts['2026-08-02'].SL_MM, 15, 'Day 2 counted qty');
+
+  const result = {
+    passed: true,
+    rule: 'Completion uses GOOD_INVENTORY Quantity only.',
+    exactOwnOnly: true,
+    sampleFacilities: parsed.facilities,
+    ignoredFacilityRowCount: parsed.ignoredFacilityRowCount,
+    countedByDate: counts
+  };
+
+  console.log(JSON.stringify(result, null, 2));
+  return result;
+}
+
+/** Prints the stored V2 MTD coverage response without changing data. */
+function testCycleCoverageApi() {
+  const result = getCycleCoverage('');
+  console.log(JSON.stringify(result, null, 2));
+  return result;
+}
+
+/**
+ * Audits the new SL_B2C Facility column without editing the source sheet.
+ * The log shows accepted counts and every skipped Google Sheet row number.
+ */
+function testSlB2cFacilityMapping() {
+  const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = spreadsheet.getSheetByName('SL_B2C');
+
+  if (!sheet || sheet.getLastRow() <= 1) {
+    const emptyResult = {
+      passed: true,
+      sourceSheet: 'SL_B2C',
+      message: 'SL_B2C is missing, empty, or contains only its header.'
+    };
+    console.log(JSON.stringify(emptyResult, null, 2));
+    return emptyResult;
+  }
+
+  const values = sheet
+    .getRange(1, 1, sheet.getLastRow(), sheet.getLastColumn())
+    .getValues();
+  const indexes = inventoryHeaderIndexes_(values[0], 'SL_B2C');
+  const rowsByFacility = emptyFacilityNumberMap_();
+  const skippedRowNumbers = [];
+
+  for (let index = 1; index < values.length; index += 1) {
+    const row = values[index];
+    if (inventoryRowIsBlank_(row, indexes)) {
+      continue;
+    }
+
+    const facility = sourceFacilityName_(
+      'SL_B2C',
+      row[indexes.Facility]
+    );
+    if (facility) {
+      rowsByFacility[facility] += 1;
+    } else {
+      skippedRowNumbers.push(index + 1);
+    }
+  }
+
+  const result = {
+    passed: skippedRowNumbers.length === 0,
+    sourceSheet: 'SL_B2C',
+    rowsByFacility: {
+      SL_MM: rowsByFacility.SL_MM,
+      SL_LJ: rowsByFacility.SL_LJ,
+      SL_BW: rowsByFacility.SL_BW
+    },
+    skippedRowCount: skippedRowNumbers.length,
+    skippedRowNumbers: skippedRowNumbers
   };
 
   console.log(JSON.stringify(result, null, 2));
@@ -1966,6 +2220,884 @@ function buildQuarterCsvAttachment_(inventoryRows, reportEndDate) {
     endDate: endDateText,
     sizeBytes: sizeBytes
   };
+}
+
+/**
+ * Creates or replaces the Gmail inventory-import trigger.
+ *
+ * The trigger checks Gmail at the configured interval. A Gmail Message ID is
+ * stored in the hidden system sheet, so the same export is never imported
+ * twice.
+ */
+function createInventoryImportTrigger() {
+  const config = getConfig();
+  const minutes = Number(config.inventoryImportMinutes);
+  const supportedMinutes = [1, 5, 10, 15, 30, 60];
+
+  if (supportedMinutes.indexOf(minutes) < 0) {
+    throw new Error(
+      'Inventory Import Minutes must be 1, 5, 10, 15, 30, or 60.'
+    );
+  }
+
+  ScriptApp.getProjectTriggers().forEach(function (trigger) {
+    if (trigger.getHandlerFunction() === INVENTORY_IMPORT_HANDLER) {
+      ScriptApp.deleteTrigger(trigger);
+    }
+  });
+
+  const builder = ScriptApp
+    .newTrigger(INVENTORY_IMPORT_HANDLER)
+    .timeBased();
+  const trigger = minutes === 60
+    ? builder.everyHours(1).create()
+    : builder.everyMinutes(minutes).create();
+
+  return {
+    handler: INVENTORY_IMPORT_HANDLER,
+    importMinutes: minutes,
+    triggerId: trigger.getUniqueId()
+  };
+}
+
+/**
+ * Imports the latest unprocessed successful shelf-inventory export from Gmail.
+ *
+ * The email contains a CloudFront CSV link rather than a Gmail attachment.
+ * This function downloads that link, keeps the seven approved facilities,
+ * sums the Quantity column by Inventory Type, and stores one date row in the
+ * hidden Cycle_Coverage_System sheet.
+ */
+function importLatestInventoryEmail() {
+  const lock = LockService.getScriptLock();
+
+  if (!lock.tryLock(5000)) {
+    throw new Error('Another inventory import or refresh is already running.');
+  }
+
+  try {
+    const config = getConfig();
+    const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sheet = setupCycleCoverageSheet_(spreadsheet);
+    const processedMessageIds = coverageProcessedMessageIds_(sheet);
+    const searchQuery = [
+      'from:(' + config.inventoryEmailSender + ')',
+      'subject:"' + gmailSearchText_(config.inventoryEmailSubject) + '"',
+      'newer_than:' + INVENTORY_EMAIL_SEARCH_DAYS + 'd'
+    ].join(' ');
+    const messages = [];
+
+    GmailApp.search(searchQuery, 0, 30).forEach(function (thread) {
+      thread.getMessages().forEach(function (message) {
+        messages.push(message);
+      });
+    });
+
+    messages.sort(function (first, second) {
+      return second.getDate().getTime() - first.getDate().getTime();
+    });
+
+    let candidate = null;
+
+    for (let index = 0; index < messages.length; index += 1) {
+      const message = messages[index];
+      const messageId = message.getId();
+
+      if (processedMessageIds[messageId]) {
+        continue;
+      }
+
+      const senderMatches = message.getFrom().toLowerCase().indexOf(
+        config.inventoryEmailSender.toLowerCase()
+      ) >= 0;
+      const subjectMatches = cleanText_(message.getSubject()) ===
+        cleanText_(config.inventoryEmailSubject);
+      const plainBody = message.getPlainBody();
+      const exportMatches = plainBody.toLowerCase().indexOf(
+        config.inventoryExportName.toLowerCase()
+      ) >= 0;
+      const successful = /status\s*:\s*successful/i.test(plainBody);
+      const sourceUrl = extractInventoryCsvUrl_(
+        plainBody + '\n' + message.getBody()
+      );
+      const sourceFile = inventoryFileNameFromUrl_(sourceUrl);
+      const reportDate = inventoryDateFromFileName_(sourceFile) ||
+        Utilities.formatDate(
+          message.getDate(),
+          getTimeZone_(),
+          'yyyy-MM-dd'
+        );
+
+      if (
+        senderMatches &&
+        subjectMatches &&
+        exportMatches &&
+        successful &&
+        sourceUrl &&
+        reportDate >= config.coverageCycleStartDate
+      ) {
+        candidate = {
+          message: message,
+          messageId: messageId,
+          sourceUrl: sourceUrl,
+          sourceFile: sourceFile,
+          reportDate: reportDate
+        };
+        break;
+      }
+    }
+
+    if (!candidate) {
+      const skippedResult = {
+        imported: false,
+        skipped: true,
+        message: 'No new successful inventory export email was found.',
+        searchedMessageCount: messages.length
+      };
+      console.log(JSON.stringify(skippedResult, null, 2));
+      return skippedResult;
+    }
+
+    const response = UrlFetchApp.fetch(candidate.sourceUrl, {
+      method: 'get',
+      followRedirects: true,
+      muteHttpExceptions: true
+    });
+    const responseCode = response.getResponseCode();
+
+    if (responseCode < 200 || responseCode >= 300) {
+      throw new Error(
+        'Inventory CSV download failed with status ' + responseCode + '.'
+      );
+    }
+
+    const parsed = parseInventoryExportCsv_(
+      response.getContentText('UTF-8')
+    );
+    const upsertResult = upsertCycleCoverageSnapshot_(sheet, {
+      reportDate: candidate.reportDate,
+      facilities: parsed.facilities,
+      sourceFile: candidate.sourceFile,
+      sourceUrl: candidate.sourceUrl,
+      messageId: candidate.messageId,
+      importedAt: new Date().toISOString(),
+      importStatus: 'IMPORTED'
+    });
+    const inventoryData = getAllInventoryData_();
+    const coverage = refreshCycleCoverageSystem_(
+      inventoryData.currentRows,
+      sheet
+    );
+    const result = {
+      imported: true,
+      skipped: false,
+      reportDate: candidate.reportDate,
+      sourceFile: candidate.sourceFile,
+      insertedNewDate: upsertResult.inserted,
+      selectedRowCount: parsed.selectedRowCount,
+      ignoredFacilityRowCount: parsed.ignoredFacilityRowCount,
+      ignoredInventoryTypeRowCount: parsed.ignoredInventoryTypeRowCount,
+      invalidQuantityRowCount: parsed.invalidQuantityRowCount,
+      latestCoverage: coverage.latest
+    };
+
+    console.log(JSON.stringify(result, null, 2));
+    return result;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** Returns the MTD facility coverage response used by the V2 frontend. */
+function getCycleCoverage(optionalMonth) {
+  const config = getConfig();
+  const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = spreadsheet.getSheetByName(CYCLE_COVERAGE_SHEET_NAME);
+  const cycleEndDate = coverageCycleEndDate_(
+    config.coverageCycleStartDate,
+    config.coverageCycleMonths
+  );
+
+  if (!sheet || sheet.getLastRow() <= 1) {
+    return {
+      setupRequired: !sheet,
+      cycleStartDate: config.coverageCycleStartDate,
+      cycleEndDate: cycleEndDate,
+      selectedMonth: validCoverageMonth_(optionalMonth) ||
+        config.coverageCycleStartDate.slice(0, 7),
+      availableMonths: [],
+      facilities: COVERAGE_FACILITIES.slice(),
+      rows: [],
+      latest: null
+    };
+  }
+
+  const records = readCycleCoverageRecords_(sheet);
+  const availableMonths = uniqueSorted_(records.map(function (record) {
+    return record.date.slice(0, 7);
+  })).reverse();
+  const selectedMonth = validCoverageMonth_(optionalMonth) ||
+    (availableMonths.length > 0
+      ? availableMonths[0]
+      : config.coverageCycleStartDate.slice(0, 7));
+  const monthRows = records.filter(function (record) {
+    return record.date.slice(0, 7) === selectedMonth;
+  });
+  const latest = monthRows.length > 0
+    ? monthRows[monthRows.length - 1]
+    : null;
+
+  return {
+    setupRequired: false,
+    cycleStartDate: config.coverageCycleStartDate,
+    cycleEndDate: cycleEndDate,
+    selectedMonth: selectedMonth,
+    availableMonths: availableMonths,
+    facilities: COVERAGE_FACILITIES.slice(),
+    rows: monthRows,
+    latest: latest
+  };
+}
+
+/** Refreshes hidden counted quantities without interrupting the main KPI API. */
+function refreshCycleCoverageSystemSafely_(inventoryRows) {
+  try {
+    const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sheet = spreadsheet.getSheetByName(CYCLE_COVERAGE_SHEET_NAME);
+
+    if (!sheet || sheet.getLastRow() <= 1) {
+      return null;
+    }
+
+    return refreshCycleCoverageSystem_(inventoryRows, sheet);
+  } catch (error) {
+    console.error(
+      'Cycle coverage refresh skipped: ' +
+        (error && error.message ? error.message : error)
+    );
+    return null;
+  }
+}
+
+/**
+ * Recalculates daily and cumulative counted quantities for every stored date.
+ *
+ * The numerator is System Quantity from cycle-count rows. The denominator is
+ * that date's emailed GOOD_INVENTORY Quantity. BAD and QC values stay stored
+ * for audit but never enter the completion percentage.
+ */
+function refreshCycleCoverageSystem_(inventoryRows, optionalSheet) {
+  const config = getConfig();
+  const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = optionalSheet ||
+    spreadsheet.getSheetByName(CYCLE_COVERAGE_SHEET_NAME);
+
+  if (!sheet || sheet.getLastRow() <= 1) {
+    return { updated: false, rowCount: 0, latest: null };
+  }
+
+  const headers = sheet
+    .getRange(1, 1, 1, sheet.getLastColumn())
+    .getDisplayValues()[0];
+  const indexes = headerIndexMap_(headers);
+  const values = sheet
+    .getRange(2, 1, sheet.getLastRow() - 1, headers.length)
+    .getValues();
+  const records = values
+    .map(function (row) {
+      return {
+        row: row,
+        date: normalizeDate_(row[indexes.Date], getTimeZone_())
+      };
+    })
+    .filter(function (record) {
+      return record.date &&
+        record.date >= config.coverageCycleStartDate;
+    })
+    .sort(function (first, second) {
+      return first.date.localeCompare(second.date);
+    });
+  const countedByDate = coverageCountedQuantitiesByDate_(
+    inventoryRows,
+    config.coverageCycleStartDate
+  );
+  const countDates = Object.keys(countedByDate).sort();
+  const cumulative = emptyFacilityNumberMap_();
+  let countDateIndex = 0;
+  let previousTotalGood = 0;
+  let previousDate = '';
+
+  records.forEach(function (record) {
+    while (
+      countDateIndex < countDates.length &&
+      countDates[countDateIndex] <= record.date
+    ) {
+      const countDate = countDates[countDateIndex];
+      COVERAGE_FACILITIES.forEach(function (facility) {
+        cumulative[facility] +=
+          countedByDate[countDate][facility] || 0;
+      });
+      countDateIndex += 1;
+    }
+
+    let totalGood = 0;
+    let totalBad = 0;
+    let totalQc = 0;
+    let totalDailyCounted = 0;
+    let totalCumulativeCounted = 0;
+
+    COVERAGE_FACILITIES.forEach(function (facility) {
+      const good = toNumber_(
+        record.row[indexes[facility + ' Good Qty']]
+      );
+      const bad = toNumber_(
+        record.row[indexes[facility + ' Bad Qty']]
+      );
+      const qc = toNumber_(
+        record.row[indexes[facility + ' QC Rejected Qty']]
+      );
+      const daily = countedByDate[record.date]
+        ? countedByDate[record.date][facility] || 0
+        : 0;
+      const cumulativeCounted = cumulative[facility];
+      const completion = good === 0 ? 0 : cumulativeCounted / good;
+
+      record.row[indexes[facility + ' Daily Counted Qty']] =
+        round_(daily, 2);
+      record.row[indexes[facility + ' Cumulative Counted Qty']] =
+        round_(cumulativeCounted, 2);
+      record.row[indexes[facility + ' Completion %']] = completion;
+      totalGood += good;
+      totalBad += bad;
+      totalQc += qc;
+      totalDailyCounted += daily;
+      totalCumulativeCounted += cumulativeCounted;
+    });
+
+    const totalCompletion = totalGood === 0
+      ? 0
+      : totalCumulativeCounted / totalGood;
+    const changeQuantity = previousDate
+      ? totalGood - previousTotalGood
+      : 0;
+    const changePercent = previousDate && previousTotalGood !== 0
+      ? changeQuantity / previousTotalGood
+      : 0;
+    const isAlert = previousDate &&
+      Math.abs(changePercent * 100) >=
+        config.inventoryChangeAlertPercent;
+    const direction = changeQuantity >= 0 ? 'increased' : 'decreased';
+    const sign = changePercent >= 0 ? '+' : '';
+    const alertNote = isAlert
+      ? 'Opening GOOD inventory ' +
+        direction +
+        ' by ' +
+        formatPlainNumber_(Math.abs(changeQuantity)) +
+        ' units (' +
+        sign +
+        round_(changePercent * 100, 2) +
+        '%) compared with ' +
+        previousDate +
+        '.'
+      : '';
+
+    record.row[indexes['TOTAL Good Qty']] = round_(totalGood, 2);
+    record.row[indexes['TOTAL Daily Counted Qty']] =
+      round_(totalDailyCounted, 2);
+    record.row[indexes['TOTAL Cumulative Counted Qty']] =
+      round_(totalCumulativeCounted, 2);
+    record.row[indexes['TOTAL Completion %']] = totalCompletion;
+    record.row[indexes['TOTAL Bad Qty']] = round_(totalBad, 2);
+    record.row[indexes['TOTAL QC Rejected Qty']] = round_(totalQc, 2);
+    record.row[indexes['Previous Total Good Qty']] =
+      round_(previousTotalGood, 2);
+    record.row[indexes['Change Qty']] = round_(changeQuantity, 2);
+    record.row[indexes['Change %']] = changePercent;
+    record.row[indexes['Alert Note']] = alertNote;
+    record.row[indexes.Date] = record.date;
+
+    previousTotalGood = totalGood;
+    previousDate = record.date;
+  });
+
+  if (records.length > 0) {
+    sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length)
+      .clearContent();
+    sheet.getRange(2, 1, records.length, headers.length)
+      .setValues(records.map(function (record) {
+        return record.row;
+      }));
+  }
+
+  const responseRecords = readCycleCoverageRecords_(sheet);
+  return {
+    updated: true,
+    rowCount: responseRecords.length,
+    latest: responseRecords.length > 0
+      ? responseRecords[responseRecords.length - 1]
+      : null
+  };
+}
+
+/** Aggregates System Quantity from cycle-count rows by date and facility. */
+function coverageCountedQuantitiesByDate_(inventoryRows, cycleStartDate) {
+  const result = {};
+
+  (inventoryRows || []).forEach(function (row) {
+    const date = cleanText_(row.date);
+    const facility = cleanText_(row.facility);
+
+    if (
+      !date ||
+      date < cycleStartDate ||
+      COVERAGE_FACILITIES.indexOf(facility) < 0
+    ) {
+      return;
+    }
+
+    if (!result[date]) {
+      result[date] = emptyFacilityNumberMap_();
+    }
+
+    result[date][facility] += Math.max(
+      0,
+      toNumber_(row.systemQuantity)
+    );
+  });
+
+  return result;
+}
+
+/** Parses the emailed CSV without keeping all 90,000 source rows in memory. */
+function parseInventoryExportCsv_(csvText) {
+  let indexes = null;
+  const facilities = emptyInventoryFacilityMap_();
+  let selectedRowCount = 0;
+  let ignoredFacilityRowCount = 0;
+  let ignoredInventoryTypeRowCount = 0;
+  let invalidQuantityRowCount = 0;
+
+  forEachCsvRow_(csvText, function (row, rowNumber) {
+    if (rowNumber === 1) {
+      indexes = csvHeaderIndexes_(row, [
+        'Facility',
+        'Inventory Type',
+        'Quantity'
+      ]);
+      return;
+    }
+
+    const sourceFacility = cleanText_(row[indexes.Facility])
+      .toUpperCase()
+      .replace(/\s+/g, ' ');
+    const facility = INVENTORY_EXPORT_FACILITY_MAP[sourceFacility];
+
+    if (!facility) {
+      ignoredFacilityRowCount += 1;
+      return;
+    }
+
+    const inventoryType = normalizeInventoryType_(
+      row[indexes['Inventory Type']]
+    );
+    const quantity = optionalNumber_(row[indexes.Quantity]);
+
+    if (quantity === null) {
+      invalidQuantityRowCount += 1;
+      return;
+    }
+
+    if (inventoryType === 'GOOD_INVENTORY') {
+      facilities[facility].goodQuantity += quantity;
+    } else if (inventoryType === 'BAD_INVENTORY') {
+      facilities[facility].badQuantity += quantity;
+    } else if (inventoryType === 'QC_REJECTED') {
+      facilities[facility].qcRejectedQuantity += quantity;
+    } else {
+      ignoredInventoryTypeRowCount += 1;
+      return;
+    }
+
+    selectedRowCount += 1;
+  });
+
+  return {
+    facilities: facilities,
+    selectedRowCount: selectedRowCount,
+    ignoredFacilityRowCount: ignoredFacilityRowCount,
+    ignoredInventoryTypeRowCount: ignoredInventoryTypeRowCount,
+    invalidQuantityRowCount: invalidQuantityRowCount
+  };
+}
+
+/** Iterates RFC-style CSV rows, including quoted commas and escaped quotes. */
+function forEachCsvRow_(csvText, callback) {
+  const text = String(csvText || '').replace(/^\uFEFF/, '');
+  let row = [];
+  let field = '';
+  let quoted = false;
+  let rowNumber = 0;
+
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text.charAt(index);
+
+    if (character === '"') {
+      if (quoted && text.charAt(index + 1) === '"') {
+        field += '"';
+        index += 1;
+      } else {
+        quoted = !quoted;
+      }
+    } else if (character === ',' && !quoted) {
+      row.push(field);
+      field = '';
+    } else if ((character === '\n' || character === '\r') && !quoted) {
+      if (character === '\r' && text.charAt(index + 1) === '\n') {
+        index += 1;
+      }
+      row.push(field);
+      field = '';
+      rowNumber += 1;
+      if (row.some(function (value) { return cleanText_(value); })) {
+        callback(row, rowNumber);
+      }
+      row = [];
+    } else {
+      field += character;
+    }
+  }
+
+  if (field || row.length > 0) {
+    row.push(field);
+    rowNumber += 1;
+    if (row.some(function (value) { return cleanText_(value); })) {
+      callback(row, rowNumber);
+    }
+  }
+}
+
+/** Validates and maps required emailed CSV columns. */
+function csvHeaderIndexes_(headerRow, requiredHeaders) {
+  const normalizedHeaders = headerRow.map(normalizeHeader_);
+  const indexes = {};
+
+  requiredHeaders.forEach(function (header) {
+    const index = normalizedHeaders.indexOf(normalizeHeader_(header));
+    if (index < 0) {
+      throw new Error(
+        'Inventory export is missing the required column "' +
+          header +
+          '".'
+      );
+    }
+    indexes[header] = index;
+  });
+
+  return indexes;
+}
+
+/** Inserts or replaces the stored opening snapshot for one reporting date. */
+function upsertCycleCoverageSnapshot_(sheet, snapshot) {
+  const headers = cycleCoverageHeaders_();
+  const indexes = headerIndexMap_(headers);
+  const row = new Array(headers.length).fill('');
+  let totalGood = 0;
+  let totalBad = 0;
+  let totalQc = 0;
+
+  row[indexes.Date] = snapshot.reportDate;
+  COVERAGE_FACILITIES.forEach(function (facility) {
+    const values = snapshot.facilities[facility] ||
+      emptyInventoryFacilityTotals_();
+    row[indexes[facility + ' Good Qty']] =
+      round_(values.goodQuantity, 2);
+    row[indexes[facility + ' Bad Qty']] =
+      round_(values.badQuantity, 2);
+    row[indexes[facility + ' QC Rejected Qty']] =
+      round_(values.qcRejectedQuantity, 2);
+    totalGood += values.goodQuantity;
+    totalBad += values.badQuantity;
+    totalQc += values.qcRejectedQuantity;
+  });
+  row[indexes['TOTAL Good Qty']] = round_(totalGood, 2);
+  row[indexes['TOTAL Bad Qty']] = round_(totalBad, 2);
+  row[indexes['TOTAL QC Rejected Qty']] = round_(totalQc, 2);
+  row[indexes['Source File']] = snapshot.sourceFile;
+  row[indexes['Source URL']] = snapshot.sourceUrl;
+  row[indexes['Imported At']] = snapshot.importedAt;
+  row[indexes['Import Status']] = snapshot.importStatus;
+
+  let targetRow = sheet.getLastRow() + 1;
+  let inserted = true;
+  let priorMessageIds = '';
+
+  if (sheet.getLastRow() > 1) {
+    const existingValues = sheet
+      .getRange(2, 1, sheet.getLastRow() - 1, headers.length)
+      .getValues();
+
+    for (let index = 0; index < existingValues.length; index += 1) {
+      const existingDate = normalizeDate_(
+        existingValues[index][indexes.Date],
+        getTimeZone_()
+      );
+      if (existingDate === snapshot.reportDate) {
+        targetRow = index + 2;
+        inserted = false;
+        priorMessageIds = cleanText_(
+          existingValues[index][indexes['Gmail Message ID']]
+        );
+        break;
+      }
+    }
+  }
+
+  const messageIds = priorMessageIds
+    ? priorMessageIds.split(',').map(cleanText_)
+    : [];
+  if (messageIds.indexOf(snapshot.messageId) < 0) {
+    messageIds.push(snapshot.messageId);
+  }
+  row[indexes['Gmail Message ID']] = messageIds.filter(Boolean).join(',');
+  sheet.getRange(targetRow, 1, 1, headers.length).setValues([row]);
+
+  if (sheet.getLastRow() > 2) {
+    sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length)
+      .sort({ column: 1, ascending: true });
+  }
+
+  if (!sheet.isSheetHidden()) {
+    sheet.hideSheet();
+  }
+
+  return { inserted: inserted, targetRow: targetRow };
+}
+
+/** Reads all imported message IDs so repeated trigger runs are idempotent. */
+function coverageProcessedMessageIds_(sheet) {
+  const ids = {};
+
+  if (!sheet || sheet.getLastRow() <= 1) {
+    return ids;
+  }
+
+  const headers = sheet
+    .getRange(1, 1, 1, sheet.getLastColumn())
+    .getDisplayValues()[0];
+  const indexes = headerIndexMap_(headers);
+  const values = sheet
+    .getRange(2, indexes['Gmail Message ID'] + 1, sheet.getLastRow() - 1, 1)
+    .getDisplayValues();
+
+  values.forEach(function (row) {
+    cleanText_(row[0]).split(',').forEach(function (id) {
+      const messageId = cleanText_(id);
+      if (messageId) {
+        ids[messageId] = true;
+      }
+    });
+  });
+
+  return ids;
+}
+
+/** Converts hidden sheet rows into a compact API response. */
+function readCycleCoverageRecords_(sheet) {
+  if (!sheet || sheet.getLastRow() <= 1) {
+    return [];
+  }
+
+  const headers = sheet
+    .getRange(1, 1, 1, sheet.getLastColumn())
+    .getDisplayValues()[0];
+  const indexes = headerIndexMap_(headers);
+  const values = sheet
+    .getRange(2, 1, sheet.getLastRow() - 1, headers.length)
+    .getValues();
+
+  return values.map(function (row) {
+    const facilities = {};
+
+    COVERAGE_FACILITIES.forEach(function (facility) {
+      facilities[facility] = {
+        goodQuantity: round_(
+          toNumber_(row[indexes[facility + ' Good Qty']]),
+          2
+        ),
+        dailyCountedQuantity: round_(
+          toNumber_(row[indexes[facility + ' Daily Counted Qty']]),
+          2
+        ),
+        cumulativeCountedQuantity: round_(
+          toNumber_(row[indexes[facility + ' Cumulative Counted Qty']]),
+          2
+        ),
+        completionPercent: round_(
+          toNumber_(row[indexes[facility + ' Completion %']]) * 100,
+          2
+        )
+      };
+    });
+
+    return {
+      date: normalizeDate_(row[indexes.Date], getTimeZone_()),
+      facilities: facilities,
+      totalGoodQuantity: round_(
+        toNumber_(row[indexes['TOTAL Good Qty']]),
+        2
+      ),
+      totalDailyCountedQuantity: round_(
+        toNumber_(row[indexes['TOTAL Daily Counted Qty']]),
+        2
+      ),
+      totalCumulativeCountedQuantity: round_(
+        toNumber_(row[indexes['TOTAL Cumulative Counted Qty']]),
+        2
+      ),
+      totalCompletionPercent: round_(
+        toNumber_(row[indexes['TOTAL Completion %']]) * 100,
+        2
+      ),
+      changeQuantity: round_(
+        toNumber_(row[indexes['Change Qty']]),
+        2
+      ),
+      changePercent: round_(
+        toNumber_(row[indexes['Change %']]) * 100,
+        2
+      ),
+      alertNote: cleanText_(row[indexes['Alert Note']]),
+      sourceFile: cleanText_(row[indexes['Source File']]),
+      importedAt: cleanText_(row[indexes['Imported At']]),
+      importStatus: cleanText_(row[indexes['Import Status']])
+    };
+  }).filter(function (record) {
+    return record.date;
+  }).sort(function (first, second) {
+    return first.date.localeCompare(second.date);
+  });
+}
+
+/** Creates a header-to-column-index lookup. */
+function headerIndexMap_(headers) {
+  const indexes = {};
+  headers.forEach(function (header, index) {
+    indexes[cleanText_(header)] = index;
+  });
+  return indexes;
+}
+
+/** Initializes numeric facility totals for one CSV snapshot. */
+function emptyInventoryFacilityMap_() {
+  const result = {};
+  COVERAGE_FACILITIES.forEach(function (facility) {
+    result[facility] = emptyInventoryFacilityTotals_();
+  });
+  return result;
+}
+
+/** Initializes GOOD, BAD, and QC quantities for one facility. */
+function emptyInventoryFacilityTotals_() {
+  return {
+    goodQuantity: 0,
+    badQuantity: 0,
+    qcRejectedQuantity: 0
+  };
+}
+
+/** Initializes a facility-to-number map. */
+function emptyFacilityNumberMap_() {
+  const result = {};
+  COVERAGE_FACILITIES.forEach(function (facility) {
+    result[facility] = 0;
+  });
+  return result;
+}
+
+/** Extracts the first CSV hyperlink from the inventory email. */
+function extractInventoryCsvUrl_(emailBody) {
+  const decodedBody = String(emailBody || '').replace(/&amp;/g, '&');
+  const match = decodedBody.match(
+    /https?:\/\/[^"'\s<>]+\.csv(?:\?[^"'\s<>]*)?/i
+  );
+  return match ? match[0] : '';
+}
+
+/** Returns the decoded CSV filename from a download URL. */
+function inventoryFileNameFromUrl_(sourceUrl) {
+  if (!sourceUrl) {
+    return '';
+  }
+  const withoutQuery = sourceUrl.split('?')[0];
+  const encodedName = withoutQuery.slice(withoutQuery.lastIndexOf('/') + 1);
+  try {
+    return decodeURIComponent(encodedName);
+  } catch (error) {
+    return encodedName;
+  }
+}
+
+/** Reads ddMMyyyy from the standard export filename. */
+function inventoryDateFromFileName_(fileName) {
+  const match = cleanText_(fileName).match(
+    /_(\d{2})(\d{2})(\d{4})(?:\d{6})?\.csv$/i
+  );
+
+  if (!match) {
+    return '';
+  }
+
+  return [match[3], match[2], match[1]].join('-');
+}
+
+/** Normalizes GOOD, BAD, and QC source values. */
+function normalizeInventoryType_(value) {
+  return cleanText_(value)
+    .toUpperCase()
+    .replace(/[\s-]+/g, '_')
+    .replace(/_+/g, '_');
+}
+
+/** Escapes a Config subject for the Gmail search query. */
+function gmailSearchText_(value) {
+  return cleanText_(value).replace(/"/g, ' ');
+}
+
+/** Returns a valid yyyy-MM filter or blank. */
+function validCoverageMonth_(value) {
+  const month = cleanText_(value);
+  return /^\d{4}-\d{2}$/.test(month) ? month : '';
+}
+
+/** Calculates the final date of a configured multi-month coverage cycle. */
+function coverageCycleEndDate_(startDate, months) {
+  const start = parseIsoDate_(startDate);
+  if (!start) {
+    return '';
+  }
+  const end = new Date(start.getTime());
+  end.setMonth(end.getMonth() + Number(months));
+  end.setDate(end.getDate() - 1);
+  return Utilities.formatDate(end, getTimeZone_(), 'yyyy-MM-dd');
+}
+
+/** Formats a plain number for inventory-change notes. */
+function formatPlainNumber_(value) {
+  return Number(value || 0).toLocaleString('en-IN', {
+    maximumFractionDigits: 2
+  });
+}
+
+/** Returns sorted unique non-blank strings. */
+function uniqueSorted_(values) {
+  const seen = {};
+  (values || []).forEach(function (value) {
+    const text = cleanText_(value);
+    if (text) {
+      seen[text] = true;
+    }
+  });
+  return Object.keys(seen).sort();
 }
 
 /**
@@ -2760,6 +3892,7 @@ function zeroActivityMessage_(range) {
 function sourceSummary_(rows, historicalRows) {
   const history = Array.isArray(historicalRows) ? historicalRows : [];
   const rowsByFacility = {};
+  const rowsBySourceSheet = {};
   const missingCostSkus = {};
   let costedRowCount = 0;
   let missingCostRowCount = 0;
@@ -2767,6 +3900,9 @@ function sourceSummary_(rows, historicalRows) {
   rows.forEach(function (row) {
     rowsByFacility[row.facility] =
       (rowsByFacility[row.facility] || 0) + 1;
+    const sourceSheet = cleanText_(row.sourceSheet) || row.facility;
+    rowsBySourceSheet[sourceSheet] =
+      (rowsBySourceSheet[sourceSheet] || 0) + 1;
 
     if (optionalNumber_(row.unitCost) !== null) {
       costedRowCount += 1;
@@ -2797,7 +3933,7 @@ function sourceSummary_(rows, historicalRows) {
     },
     skippedSourceSheets: SOURCE_SHEETS.filter(function (sheetName) {
       return !Object.prototype.hasOwnProperty.call(
-        rowsByFacility,
+        rowsBySourceSheet,
         sheetName
       );
     })
@@ -2826,7 +3962,10 @@ function setupConfigSheet_(spreadsheet) {
       });
   }
 
-  const missingRows = CONFIG_DEFAULTS.filter(function (row) {
+  const allDefaults = CONFIG_DEFAULTS.concat(
+    CYCLE_COVERAGE_CONFIG_DEFAULTS
+  );
+  const missingRows = allDefaults.filter(function (row) {
     return !existingNames[row[0]];
   });
 
@@ -2858,6 +3997,10 @@ function setupConfigSheet_(spreadsheet) {
       valueCell.setDataValidation(
         listValidation_(['1', '5', '10', '15', '30', '60'])
       );
+    } else if (settingName === 'Inventory Import Minutes') {
+      valueCell.setDataValidation(
+        listValidation_(['1', '5', '10', '15', '30', '60'])
+      );
     }
   });
 }
@@ -2874,6 +4017,88 @@ function setupActivityStatusSheet_(spreadsheet) {
   sheet
     .getRange(2, 2, Math.max(sheet.getMaxRows() - 1, 1), 1)
     .setDataValidation(listValidation_(ACTIVITY_REASONS));
+}
+
+/**
+ * Creates the hidden Version 2 cycle-coverage system sheet.
+ *
+ * Dates are stored in rows. Each facility has opening GOOD quantity, daily
+ * counted quantity, cumulative counted quantity, completion percentage, BAD
+ * quantity, and QC rejected quantity columns. Users do not enter data here.
+ */
+function setupCycleCoverageSheet_(spreadsheet) {
+  const sheet = spreadsheet.getSheetByName(CYCLE_COVERAGE_SHEET_NAME) ||
+    spreadsheet.insertSheet(CYCLE_COVERAGE_SHEET_NAME);
+  const headers = cycleCoverageHeaders_();
+
+  if (sheet.getMaxColumns() < headers.length) {
+    sheet.insertColumnsAfter(
+      sheet.getMaxColumns(),
+      headers.length - sheet.getMaxColumns()
+    );
+  }
+
+  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  styleSetupSheet_(sheet, headers.length);
+  sheet.getRange('A:A').setNumberFormat('yyyy-mm-dd');
+
+  headers.forEach(function (header, index) {
+    if (/Completion %$|Change %$/.test(header)) {
+      sheet.getRange(2, index + 1, sheet.getMaxRows() - 1, 1)
+        .setNumberFormat('0.00%');
+    } else if (/Qty$/.test(header)) {
+      sheet.getRange(2, index + 1, sheet.getMaxRows() - 1, 1)
+        .setNumberFormat('#,##0.00');
+    }
+  });
+
+  const hasCoverageProtection = sheet
+    .getProtections(SpreadsheetApp.ProtectionType.SHEET)
+    .some(function (protection) {
+      return protection.getDescription() ===
+        'Managed automatically by Inventory Health Dashboard V2';
+    });
+
+  if (!hasCoverageProtection) {
+    sheet.protect()
+      .setDescription(
+        'Managed automatically by Inventory Health Dashboard V2'
+      )
+      .setWarningOnly(true);
+  }
+
+  if (!sheet.isSheetHidden()) {
+    sheet.hideSheet();
+  }
+
+  return sheet;
+}
+
+/** Builds the stable column layout for the hidden coverage sheet. */
+function cycleCoverageHeaders_() {
+  const headers = ['Date'];
+  const groups = COVERAGE_FACILITIES.concat(['TOTAL']);
+
+  groups.forEach(function (facility) {
+    headers.push(facility + ' Good Qty');
+    headers.push(facility + ' Daily Counted Qty');
+    headers.push(facility + ' Cumulative Counted Qty');
+    headers.push(facility + ' Completion %');
+    headers.push(facility + ' Bad Qty');
+    headers.push(facility + ' QC Rejected Qty');
+  });
+
+  return headers.concat([
+    'Previous Total Good Qty',
+    'Change Qty',
+    'Change %',
+    'Alert Note',
+    'Source File',
+    'Source URL',
+    'Gmail Message ID',
+    'Imported At',
+    'Import Status'
+  ]);
 }
 
 /**
@@ -2951,7 +4176,42 @@ function inventoryHeaderIndexes_(headerRow, sheetName) {
     indexes[requiredHeader] = index;
   });
 
+  let facilityIndex = normalizedHeaders.indexOf(
+    normalizeHeader_('Facility')
+  );
+
+  if (facilityIndex < 0) {
+    facilityIndex = normalizedHeaders.indexOf(
+      normalizeHeader_('Facility Name')
+    );
+  }
+
+  if (sheetName === 'SL_B2C' && facilityIndex < 0) {
+    throw new Error(
+      'Sheet "SL_B2C" must contain the new Facility column for ' +
+        'SL_MM, SL_LJ, and SL_BW.'
+    );
+  }
+
+  if (facilityIndex >= 0) {
+    indexes.Facility = facilityIndex;
+  }
+
   return indexes;
+}
+
+/** Resolves a reporting facility without exposing SL_B2C as a facility. */
+function sourceFacilityName_(sheetName, enteredFacility) {
+  if (sheetName !== 'SL_B2C') {
+    return sheetName;
+  }
+
+  const key = cleanText_(enteredFacility)
+    .toUpperCase()
+    .replace(/[-_]+/g, ' ')
+    .replace(/\s+/g, ' ');
+
+  return SL_B2C_FACILITY_MAP[key] || '';
 }
 
 /**
@@ -3350,6 +4610,27 @@ function requiredNumberSetting_(settings, name, minimum, maximum) {
   }
 
   return value;
+}
+
+/** Reads an optional Config text value and applies a safe default. */
+function optionalTextSetting_(settings, name, defaultValue) {
+  const value = cleanText_(settings[name]);
+  return value || defaultValue;
+}
+
+/** Reads an optional Config number and validates it when entered. */
+function optionalNumberSetting_(
+  settings,
+  name,
+  defaultValue,
+  minimum,
+  maximum
+) {
+  if (isBlank_(settings[name])) {
+    return defaultValue;
+  }
+
+  return requiredNumberSetting_(settings, name, minimum, maximum);
 }
 
 /**

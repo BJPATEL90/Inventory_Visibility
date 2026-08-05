@@ -1841,6 +1841,7 @@ function sendInventoryEmail() {
   const inventoryData = getAllInventoryData_();
   const dashboard = buildDashboard_(inventoryData);
   refreshCycleCoverageSystemSafely_(inventoryData.currentRows);
+  const cycleCoverage = getCycleCoverage('');
   const period = dashboard.periods.yesterday;
   const quarterCsv = buildQuarterCsvAttachment_(
     inventoryData.allRows,
@@ -1849,7 +1850,8 @@ function sendInventoryEmail() {
   const report = buildEmailReport_(
     config,
     period,
-    dashboard.periods
+    dashboard.periods,
+    cycleCoverage
   );
   report.quarterAttachment = {
     fileName: quarterCsv.fileName,
@@ -1911,6 +1913,8 @@ function testEmailPreview() {
   const config = getConfig();
   const inventoryData = getAllInventoryData_();
   const dashboard = buildDashboard_(inventoryData);
+  refreshCycleCoverageSystemSafely_(inventoryData.currentRows);
+  const cycleCoverage = getCycleCoverage('');
   const period = dashboard.periods.yesterday;
   const quarterCsv = buildQuarterCsvAttachment_(
     inventoryData.allRows,
@@ -1919,7 +1923,8 @@ function testEmailPreview() {
   const report = buildEmailReport_(
     config,
     period,
-    dashboard.periods
+    dashboard.periods,
+    cycleCoverage
   );
   report.quarterAttachment = {
     fileName: quarterCsv.fileName,
@@ -1938,6 +1943,7 @@ function testEmailPreview() {
     periodSummary: report.periodSummary,
     valuePeriodSummaryCount: report.valuePeriodSummary.length,
     valuePeriodSummary: report.valuePeriodSummary,
+    cycleCoverage: report.cycleCoverage,
     metricCount: report.metrics.length,
     negativeNumberExample: formatEmailNumber_(-6307),
     negativeValueExample: formatEmailCurrency_(-225811.56),
@@ -3791,7 +3797,7 @@ function buildDashboard_(optionalInventoryData, optionalFilters) {
 /**
  * Creates the simple view model consumed by EmailTemplate.html.
  */
-function buildEmailReport_(config, period, periods) {
+function buildEmailReport_(config, period, periods, cycleCoverage) {
   const kpis = period.kpis;
   const inventoryStyle = getAccuracyStyle(kpis.inventoryAccuracy);
   const valueAccuracyStyle = getAccuracyStyle(kpis.valueAccuracy);
@@ -3838,6 +3844,7 @@ function buildEmailReport_(config, period, periods) {
               : ''
         }
       : null,
+    cycleCoverage: buildEmailCoverage_(config, cycleCoverage),
     periodSummary: [
       periods.lastQuarter,
       periods.lastMonth,
@@ -3981,6 +3988,32 @@ function buildPlainTextEmail_(report) {
     'Reporting date: ' + report.reportingDate
   ];
 
+  if (report.cycleCoverage) {
+    const coverage = report.cycleCoverage;
+    lines.push(coverage.title);
+    lines.push('Cycle: ' + coverage.dateRange);
+    lines.push('As of: ' + coverage.asOfDate);
+    lines.push('Overall coverage: ' + coverage.completionPercent);
+    lines.push('Opening GOOD Qty: ' + coverage.openingGoodQuantity);
+    lines.push(
+      'Cumulative Counted: ' + coverage.cumulativeCountedQuantity
+    );
+    lines.push('Counted Today: ' + coverage.countedTodayQuantity);
+    lines.push(
+      'Inventory Change: ' + coverage.inventoryChangePercent +
+      ' (' + coverage.inventoryChangeQuantity + ' units)'
+    );
+    lines.push(coverage.alertNote);
+    lines.push('Facility Coverage');
+    coverage.facilities.forEach(function (facility) {
+      lines.push(
+        facility.name + ': ' + facility.completionPercent +
+        ' | Opening ' + facility.openingGoodQuantity +
+        ' | Counted ' + facility.cumulativeCountedQuantity
+      );
+    });
+  }
+
   lines.push('Inventory Accuracy Summary');
   report.periodSummary.forEach(function (period) {
     lines.push(period.label + ': ' + period.value);
@@ -4064,6 +4097,15 @@ function formatEmailCurrency_(value) {
  */
 function formatEmailPercent_(value) {
   return formatEmailNumber_(value) + '%';
+}
+
+/** Formats an email percentage with an explicit plus sign when positive. */
+function formatSignedEmailPercent_(value) {
+  const number = Number(round_(toNumber_(value), 2));
+  if (number > 0) {
+    return '+' + formatEmailPercent_(number);
+  }
+  return formatEmailPercent_(number);
 }
 
 /**
@@ -4725,6 +4767,95 @@ function newAbcBucket_(abcClass) {
     physicalValue: 0,
     absoluteDifferenceValue: 0
   };
+}
+
+/**
+ * Converts the latest hidden coverage snapshot into an email-friendly model.
+ *
+ * Completion uses cumulative counted System Quantity divided by that day's
+ * opening GOOD inventory. The progress bar is capped visually at 100%, while
+ * the displayed percentage may exceed 100% when stock has been counted again.
+ */
+function buildEmailCoverage_(config, cycleCoverage) {
+  if (!cycleCoverage || !cycleCoverage.latest) {
+    return null;
+  }
+
+  const latest = cycleCoverage.latest;
+  const completion = toNumber_(latest.totalCompletionPercent);
+  const progressWidth = Math.max(0, Math.min(100, completion));
+  const changePercent = toNumber_(latest.changePercent);
+  const threshold = toNumber_(config.inventoryChangeAlertPercent);
+  const thresholdReached = Math.abs(changePercent) >= threshold;
+  const facilityLabels = {
+    SL_AMBIENT: 'SL Ambient',
+    SL_MH: 'SL Mother Hub',
+    SL_RX: 'SL Rx',
+    SL_MM: 'SL MM',
+    SL_LJ: 'SLLJ',
+    SL_BW: 'SL BW',
+    OWN: 'OWN'
+  };
+
+  return {
+    title: fiscalQuarterLabel_(cycleCoverage.cycleStartDate) +
+      ' Overall Quantity Coverage',
+    asOfDate: formatEmailDate_(latest.date),
+    dateRange:
+      formatEmailDate_(cycleCoverage.cycleStartDate) +
+      ' - ' +
+      formatEmailDate_(cycleCoverage.cycleEndDate),
+    completionPercent: formatEmailPercent_(completion),
+    openingGoodQuantity: formatEmailNumber_(latest.totalGoodQuantity),
+    cumulativeCountedQuantity: formatEmailNumber_(
+      latest.totalCumulativeCountedQuantity
+    ),
+    countedTodayQuantity: formatEmailNumber_(
+      latest.totalDailyCountedQuantity
+    ),
+    inventoryChangePercent: formatSignedEmailPercent_(changePercent),
+    inventoryChangeQuantity: formatEmailNumber_(latest.changeQuantity),
+    changeThreshold: formatEmailPercent_(threshold),
+    thresholdReached: thresholdReached,
+    changeTextColor: thresholdReached ? '#92400e' : '#1e3a8a',
+    changeBackgroundColor: thresholdReached ? '#fef3c7' : '#eff6ff',
+    alertNote: latest.alertNote ||
+      'No material inventory movement detected.',
+    progressWidth: round_(progressWidth, 2),
+    remainingWidth: round_(100 - progressWidth, 2),
+    facilities: COVERAGE_FACILITIES.map(function (facility) {
+      const values = latest.facilities[facility] || {};
+      const facilityCompletion = toNumber_(values.completionPercent);
+      return {
+        name: facilityLabels[facility] || facility,
+        openingGoodQuantity: formatEmailNumber_(values.goodQuantity),
+        cumulativeCountedQuantity: formatEmailNumber_(
+          values.cumulativeCountedQuantity
+        ),
+        completionPercent: formatEmailPercent_(facilityCompletion),
+        textColor: getAccuracyStyle(facilityCompletion).text
+      };
+    })
+  };
+}
+
+/** Returns the Indian financial-year quarter label used by the dashboard. */
+function fiscalQuarterLabel_(dateText) {
+  const date = parseIsoDate_(dateText);
+  if (!date) {
+    return 'Quarter';
+  }
+  const month = date.getMonth() + 1;
+  if (month >= 4 && month <= 6) {
+    return 'Q1';
+  }
+  if (month >= 7 && month <= 9) {
+    return 'Q2';
+  }
+  if (month >= 10) {
+    return 'Q3';
+  }
+  return 'Q4';
 }
 
 /** Adds one ABC accumulator into another, including unique SKU sets. */

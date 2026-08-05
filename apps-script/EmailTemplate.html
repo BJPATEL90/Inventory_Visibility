@@ -43,6 +43,120 @@
               </td>
             </tr>
 
+            <? if (report.cycleCoverage) {
+              var coverage = report.cycleCoverage;
+            ?>
+              <tr>
+                <td style="padding:24px 32px 8px 32px;">
+                  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%; background-color:#1e3a8a; border-collapse:separate; border-spacing:0; border-radius:14px;">
+                    <tr>
+                      <td style="padding:24px;">
+                        <div style="color:#bfdbfe; font-size:11px; line-height:16px; font-weight:bold; letter-spacing:1.5px; text-transform:uppercase;">
+                          <?= coverage.title ?>
+                        </div>
+                        <div style="margin-top:8px; color:#ffffff; font-size:38px; line-height:44px; font-weight:bold;">
+                          <?= coverage.completionPercent ?>
+                        </div>
+                        <div style="margin-top:4px; color:#dbeafe; font-size:12px; line-height:18px;">
+                          As of <?= coverage.asOfDate ?> &nbsp;|&nbsp; Cycle <?= coverage.dateRange ?>
+                        </div>
+
+                        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%; margin-top:18px;">
+                          <tr>
+                            <td width="50%" valign="top" style="width:50%; padding:0 5px 8px 0;">
+                              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%; background-color:#3151a5; border-radius:9px;">
+                                <tr>
+                                  <td style="padding:12px 14px;">
+                                    <div style="color:#bfdbfe; font-size:10px; line-height:15px;">Opening GOOD Qty</div>
+                                    <div style="margin-top:3px; color:#ffffff; font-size:18px; line-height:24px; font-weight:bold;"><?= coverage.openingGoodQuantity ?></div>
+                                  </td>
+                                </tr>
+                              </table>
+                            </td>
+                            <td width="50%" valign="top" style="width:50%; padding:0 0 8px 5px;">
+                              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%; background-color:#3151a5; border-radius:9px;">
+                                <tr>
+                                  <td style="padding:12px 14px;">
+                                    <div style="color:#bfdbfe; font-size:10px; line-height:15px;">Cumulative Counted</div>
+                                    <div style="margin-top:3px; color:#ffffff; font-size:18px; line-height:24px; font-weight:bold;"><?= coverage.cumulativeCountedQuantity ?></div>
+                                  </td>
+                                </tr>
+                              </table>
+                            </td>
+                          </tr>
+                          <tr>
+                            <td width="50%" valign="top" style="width:50%; padding:0 5px 0 0;">
+                              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%; background-color:#3151a5; border-radius:9px;">
+                                <tr>
+                                  <td style="padding:12px 14px;">
+                                    <div style="color:#bfdbfe; font-size:10px; line-height:15px;">Counted Today</div>
+                                    <div style="margin-top:3px; color:#ffffff; font-size:18px; line-height:24px; font-weight:bold;"><?= coverage.countedTodayQuantity ?></div>
+                                  </td>
+                                </tr>
+                              </table>
+                            </td>
+                            <td width="50%" valign="top" style="width:50%; padding:0 0 0 5px;">
+                              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%; background-color:<?= coverage.changeBackgroundColor ?>; border-radius:9px;">
+                                <tr>
+                                  <td style="padding:12px 14px;">
+                                    <div style="color:<?= coverage.changeTextColor ?>; font-size:10px; line-height:15px;">Inventory Change vs Previous Day</div>
+                                    <div style="margin-top:3px; color:<?= coverage.changeTextColor ?>; font-size:18px; line-height:24px; font-weight:bold;"><?= coverage.inventoryChangePercent ?></div>
+                                  </td>
+                                </tr>
+                              </table>
+                            </td>
+                          </tr>
+                        </table>
+
+                        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%; margin-top:16px; background-color:#3b5bb2; border-radius:8px;">
+                          <tr>
+                            <? if (coverage.progressWidth > 0) { ?>
+                              <td width="<?= coverage.progressWidth ?>%" height="12" bgcolor="#22d3ee" style="width:<?= coverage.progressWidth ?>%; height:12px; background-color:#22d3ee; font-size:0; line-height:0;">&nbsp;</td>
+                            <? } ?>
+                            <? if (coverage.remainingWidth > 0) { ?>
+                              <td width="<?= coverage.remainingWidth ?>%" height="12" bgcolor="#3b5bb2" style="width:<?= coverage.remainingWidth ?>%; height:12px; background-color:#3b5bb2; font-size:0; line-height:0;">&nbsp;</td>
+                            <? } ?>
+                          </tr>
+                        </table>
+                        <div style="margin-top:9px; color:#dbeafe; font-size:10px; line-height:16px;">
+                          <?= coverage.alertNote ?> Daily threshold: +/-<?= coverage.changeThreshold ?>.
+                        </div>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+
+              <tr>
+                <td style="padding:18px 32px 4px 32px;">
+                  <div style="color:#0f172a; font-size:16px; line-height:23px; font-weight:bold;">
+                    Facility Quantity Coverage
+                  </div>
+                  <div style="margin-top:3px; margin-bottom:10px; color:#64748b; font-size:12px; line-height:18px;">
+                    GOOD inventory only. Counted quantity is cumulative from the cycle start date.
+                  </div>
+                  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%; border:1px solid #e2e8f0; border-collapse:collapse;">
+                    <tr style="background-color:#eff6ff;">
+                      <td style="padding:9px 8px; border-bottom:1px solid #cbd5e1; color:#1e3a8a; font-size:10px; line-height:15px; font-weight:bold; text-transform:uppercase;">Facility</td>
+                      <td align="right" style="padding:9px 8px; border-bottom:1px solid #cbd5e1; color:#1e3a8a; font-size:10px; line-height:15px; font-weight:bold; text-transform:uppercase;">Opening GOOD</td>
+                      <td align="right" style="padding:9px 8px; border-bottom:1px solid #cbd5e1; color:#1e3a8a; font-size:10px; line-height:15px; font-weight:bold; text-transform:uppercase;">Counted</td>
+                      <td align="right" style="padding:9px 8px; border-bottom:1px solid #cbd5e1; color:#1e3a8a; font-size:10px; line-height:15px; font-weight:bold; text-transform:uppercase;">Coverage</td>
+                    </tr>
+                    <? for (var facilityIndex = 0; facilityIndex < coverage.facilities.length; facilityIndex += 1) {
+                      var facility = coverage.facilities[facilityIndex];
+                    ?>
+                      <tr>
+                        <td style="padding:9px 8px; border-bottom:1px solid #e2e8f0; color:#334155; font-size:11px; line-height:16px; font-weight:bold;"><?= facility.name ?></td>
+                        <td align="right" style="padding:9px 8px; border-bottom:1px solid #e2e8f0; color:#475569; font-size:11px; line-height:16px;"><?= facility.openingGoodQuantity ?></td>
+                        <td align="right" style="padding:9px 8px; border-bottom:1px solid #e2e8f0; color:#475569; font-size:11px; line-height:16px;"><?= facility.cumulativeCountedQuantity ?></td>
+                        <td align="right" style="padding:9px 8px; border-bottom:1px solid #e2e8f0; color:<?= facility.textColor ?>; font-size:11px; line-height:16px; font-weight:bold;"><?= facility.completionPercent ?></td>
+                      </tr>
+                    <? } ?>
+                  </table>
+                </td>
+              </tr>
+            <? } ?>
+
             <tr>
               <td style="padding:28px 32px 10px 32px;">
                 <div style="color:#0f172a; font-size:18px; line-height:25px; font-weight:bold;">
@@ -54,32 +168,34 @@
                 </div>
 
                 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%; margin-bottom:18px;">
-                  <tr>
-                    <? for (var periodIndex = 0; periodIndex < report.periodSummary.length; periodIndex += 1) {
-                      var summary = report.periodSummary[periodIndex];
-                    ?>
-                      <td width="25%" valign="top" style="width:25%; padding:0 4px;">
-                        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%; background-color:<?= summary.backgroundColor ?>; border-top:4px solid <?= summary.indicatorColor ?>; border-radius:9px;">
-                          <tr>
-                            <td align="center" style="padding:14px 6px;">
-                              <div style="color:#64748b; font-size:10px; line-height:14px; font-weight:bold; text-transform:uppercase;">
-                                <?= summary.label ?>
-                              </div>
-                              <div style="margin-top:5px; color:<?= summary.textColor ?>; font-size:20px; line-height:27px; font-weight:bold;">
-                                <?= summary.value ?>
-                              </div>
-                              <div style="margin-top:8px; padding-top:7px; border-top:1px solid #cbd5e1; color:#475569; font-size:10px; line-height:15px;">
-                                <strong>Qty:</strong> <?= summary.quantity ?>
-                              </div>
-                              <div style="margin-top:5px; color:#64748b; font-size:9px; line-height:13px;">
-                                <?= summary.dateRange ?>
-                              </div>
-                            </td>
-                          </tr>
-                        </table>
-                      </td>
-                    <? } ?>
-                  </tr>
+                  <? for (var periodRowIndex = 0; periodRowIndex < report.periodSummary.length; periodRowIndex += 2) { ?>
+                    <tr>
+                      <? for (var periodIndex = periodRowIndex; periodIndex < Math.min(periodRowIndex + 2, report.periodSummary.length); periodIndex += 1) {
+                        var summary = report.periodSummary[periodIndex];
+                      ?>
+                        <td width="50%" valign="top" style="width:50%; padding:0 4px 8px 4px;">
+                          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%; background-color:<?= summary.backgroundColor ?>; border-top:4px solid <?= summary.indicatorColor ?>; border-radius:9px;">
+                            <tr>
+                              <td align="center" style="padding:14px 6px;">
+                                <div style="color:#64748b; font-size:10px; line-height:14px; font-weight:bold; text-transform:uppercase;">
+                                  <?= summary.label ?>
+                                </div>
+                                <div style="margin-top:5px; color:<?= summary.textColor ?>; font-size:20px; line-height:27px; font-weight:bold;">
+                                  <?= summary.value ?>
+                                </div>
+                                <div style="margin-top:8px; padding-top:7px; border-top:1px solid #cbd5e1; color:#475569; font-size:10px; line-height:15px;">
+                                  <strong>Qty:</strong> <?= summary.quantity ?>
+                                </div>
+                                <div style="margin-top:5px; color:#64748b; font-size:9px; line-height:13px;">
+                                  <?= summary.dateRange ?>
+                                </div>
+                              </td>
+                            </tr>
+                          </table>
+                        </td>
+                      <? } ?>
+                    </tr>
+                  <? } ?>
                 </table>
 
                 <div style="color:#0f172a; font-size:16px; line-height:23px; font-weight:bold;">
@@ -90,32 +206,34 @@
                 </div>
 
                 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%; margin-bottom:18px;">
-                  <tr>
-                    <? for (var valuePeriodIndex = 0; valuePeriodIndex < report.valuePeriodSummary.length; valuePeriodIndex += 1) {
-                      var valueSummary = report.valuePeriodSummary[valuePeriodIndex];
-                    ?>
-                      <td width="25%" valign="top" style="width:25%; padding:0 4px;">
-                        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%; background-color:<?= valueSummary.backgroundColor ?>; border-top:4px solid <?= valueSummary.indicatorColor ?>; border-radius:9px;">
-                          <tr>
-                            <td align="center" style="padding:12px 6px;">
-                              <div style="color:#64748b; font-size:10px; line-height:14px; font-weight:bold; text-transform:uppercase;">
-                                <?= valueSummary.label ?>
-                              </div>
-                              <div style="margin-top:5px; color:<?= valueSummary.textColor ?>; font-size:20px; line-height:27px; font-weight:bold;">
-                                <?= valueSummary.value ?>
-                              </div>
-                              <div style="margin-top:8px; padding-top:7px; border-top:1px solid #cbd5e1; color:#475569; font-size:10px; line-height:15px;">
-                                <strong>Value:</strong> <?= valueSummary.inventoryValue ?>
-                              </div>
-                              <div style="color:#475569; font-size:10px; line-height:15px;">
-                                <strong>Coverage:</strong> <?= valueSummary.costCoverage ?>
-                              </div>
-                            </td>
-                          </tr>
-                        </table>
-                      </td>
-                    <? } ?>
-                  </tr>
+                  <? for (var valuePeriodRowIndex = 0; valuePeriodRowIndex < report.valuePeriodSummary.length; valuePeriodRowIndex += 2) { ?>
+                    <tr>
+                      <? for (var valuePeriodIndex = valuePeriodRowIndex; valuePeriodIndex < Math.min(valuePeriodRowIndex + 2, report.valuePeriodSummary.length); valuePeriodIndex += 1) {
+                        var valueSummary = report.valuePeriodSummary[valuePeriodIndex];
+                      ?>
+                        <td width="50%" valign="top" style="width:50%; padding:0 4px 8px 4px;">
+                          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%; background-color:<?= valueSummary.backgroundColor ?>; border-top:4px solid <?= valueSummary.indicatorColor ?>; border-radius:9px;">
+                            <tr>
+                              <td align="center" style="padding:12px 6px;">
+                                <div style="color:#64748b; font-size:10px; line-height:14px; font-weight:bold; text-transform:uppercase;">
+                                  <?= valueSummary.label ?>
+                                </div>
+                                <div style="margin-top:5px; color:<?= valueSummary.textColor ?>; font-size:20px; line-height:27px; font-weight:bold;">
+                                  <?= valueSummary.value ?>
+                                </div>
+                                <div style="margin-top:8px; padding-top:7px; border-top:1px solid #cbd5e1; color:#475569; font-size:10px; line-height:15px;">
+                                  <strong>Value:</strong> <?= valueSummary.inventoryValue ?>
+                                </div>
+                                <div style="color:#475569; font-size:10px; line-height:15px;">
+                                  <strong>Coverage:</strong> <?= valueSummary.costCoverage ?>
+                                </div>
+                              </td>
+                            </tr>
+                          </table>
+                        </td>
+                      <? } ?>
+                    </tr>
+                  <? } ?>
                 </table>
 
                 <? if (!report.hasActivity && report.zeroActivity) { ?>

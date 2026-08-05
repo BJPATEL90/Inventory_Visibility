@@ -129,6 +129,7 @@ const INVENTORY_EXPORT_FACILITY_MAP = {
   'SL MOTHER HUB': 'SL_MH',
   'SL RX': 'SL_RX',
   'SL MM': 'SL_MM',
+  'SLLJ': 'SL_LJ',
   'SL LJ': 'SL_LJ',
   'SL BW': 'SL_BW',
   'OWN': 'OWN'
@@ -136,6 +137,7 @@ const INVENTORY_EXPORT_FACILITY_MAP = {
 const SL_B2C_SOURCE_FACILITY_MAP = {
   'SL MM': 'SL_MM',
   'SL_MM': 'SL_MM',
+  'SLLJ': 'SL_LJ',
   'SL LJ': 'SL_LJ',
   'SL_LJ': 'SL_LJ',
   'SL BW': 'SL_BW',
@@ -1923,6 +1925,7 @@ function testCycleCoverageCalculations() {
     'SL Ambient,BAD_INVENTORY,7',
     'SL Ambient,QC_REJECTED,3',
     'SL MM,GOOD_INVENTORY,50',
+    'SLLJ,GOOD_INVENTORY,20',
     'OWN,GOOD_INVENTORY,25',
     'OWN B2B,GOOD_INVENTORY,999'
   ].join('\r\n');
@@ -1961,6 +1964,7 @@ function testCycleCoverageCalculations() {
     'SL Ambient QC Quantity'
   );
   assertEqual_(parsed.facilities.SL_MM.goodQuantity, 50, 'SL MM GOOD');
+  assertEqual_(parsed.facilities.SL_LJ.goodQuantity, 20, 'SLLJ GOOD');
   assertEqual_(parsed.facilities.OWN.goodQuantity, 25, 'Exact OWN GOOD');
   assertEqual_(parsed.ignoredFacilityRowCount, 1, 'OWN child exclusion');
   assertEqual_(counts['2026-08-01'].SL_MM, 10, 'Day 1 counted qty');

@@ -19,7 +19,7 @@ const FACILITY_LABELS: Record<CoverageFacilityKey, string> = {
   SL_MH: 'SL Mother Hub',
   SL_RX: 'SL RX',
   SL_MM: 'SL MM',
-  SL_LJ: 'SL LJ',
+  SL_LJ: 'SLLJ',
   SL_BW: 'SL BW',
   OWN: 'OWN'
 };

@@ -61,7 +61,7 @@ only these exact inventory-export facilities:
 - `SL Mother Hub` -> `SL_MH`
 - `SL RX` -> `SL_RX`
 - `SL MM` -> `SL_MM`
-- `SL LJ` -> `SL_LJ`
+- `SLLJ` -> `SL_LJ`
 - `SL BW` -> `SL_BW`
 - exact `OWN` -> `OWN`
 
@@ -75,12 +75,12 @@ enter the completion calculation.
 
 The daily cycle-count source tab is `SL_B2C`. It is only a parent sheet
 name. Its new `Facility` or `Facility Name` column must contain `SL_MM`,
-`SL_LJ`, or `SL_BW`. `SL_B2C` itself is never displayed as a facility. Blank
+`SLLJ`, or `SL_BW`. `SL_B2C` itself is never displayed as a facility. Blank
 or unsupported values are skipped and listed by
 `testSlB2cFacilityMapping()`.
 
 This is separate from the daily inventory CSV. The CSV contains the facility
-names `SL MM`, `SL LJ`, and `SL BW`; it is not expected to contain a facility
+names `SL MM`, `SLLJ`, and `SL BW`; it is not expected to contain a facility
 named `SL_B2C`.
 
 ### V2 quantity completion formula

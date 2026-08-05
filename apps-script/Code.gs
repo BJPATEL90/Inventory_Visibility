@@ -324,10 +324,11 @@ function getConfig() {
     ),
     dashboardUrl: requiredTextSetting_(settings, 'Dashboard URL'),
     theme: requiredTextSetting_(settings, 'Theme'),
-    coverageCycleStartDate: optionalTextSetting_(
+    coverageCycleStartDate: optionalDateSetting_(
       settings,
       'Coverage Cycle Start Date',
-      '2026-08-01'
+      '2026-08-01',
+      spreadsheet.getSpreadsheetTimeZone()
     ),
     coverageCycleMonths: optionalNumberSetting_(
       settings,
@@ -4741,6 +4742,37 @@ function requiredNumberSetting_(settings, name, minimum, maximum) {
 function optionalTextSetting_(settings, name, defaultValue) {
   const value = cleanText_(settings[name]);
   return value || defaultValue;
+}
+
+/**
+ * Reads an optional Config date and always returns yyyy-MM-dd.
+ *
+ * Google Sheets can return the same cell as either text or a Date object,
+ * depending on the cell format. Normalizing here keeps email-date comparisons
+ * and month filters reliable in both cases.
+ */
+function optionalDateSetting_(
+  settings,
+  name,
+  defaultValue,
+  timeZone
+) {
+  if (isBlank_(settings[name])) {
+    return defaultValue;
+  }
+
+  const value = normalizeDate_(
+    settings[name],
+    timeZone || 'Asia/Kolkata'
+  );
+
+  if (!value) {
+    throw new Error(
+      'Config value "' + name + '" must be a valid date.'
+    );
+  }
+
+  return value;
 }
 
 /** Reads an optional Config number and validates it when entered. */

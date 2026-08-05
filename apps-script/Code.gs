@@ -2050,6 +2050,41 @@ function testSlB2cFacilityMapping() {
 }
 
 /**
+ * Lists the exact sheet-tab names in Inventory_Dashboard without changing any
+ * data. Use this when a source tab cannot be found because of spaces, spelling,
+ * or a different spreadsheet connection.
+ */
+function testListInventorySheetNames() {
+  const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheets = spreadsheet.getSheets().map(function (sheet, index) {
+    return {
+      position: index + 1,
+      name: sheet.getName(),
+      rowCount: sheet.getLastRow(),
+      columnCount: sheet.getLastColumn(),
+      hidden: sheet.isSheetHidden()
+    };
+  });
+  const likelyB2cMatches = sheets.filter(function (sheet) {
+    return cleanText_(sheet.name)
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, '')
+      .indexOf('B2C') >= 0;
+  });
+  const result = {
+    passed: true,
+    spreadsheetId: SPREADSHEET_ID,
+    spreadsheetName: spreadsheet.getName(),
+    sheetCount: sheets.length,
+    likelyB2cMatches: likelyB2cMatches,
+    sheets: sheets
+  };
+
+  console.log(JSON.stringify(result, null, 2));
+  return result;
+}
+
+/**
  * Tests the small Month-to-Date transaction response without changing sheets.
  *
  * The log confirms pagination, KPI summary, and the first response

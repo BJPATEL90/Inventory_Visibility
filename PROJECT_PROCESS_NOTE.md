@@ -61,6 +61,11 @@ and reduce Cost Coverage.
 If urgent data was entered after the latest refresh, run
 `refreshDashboardCache()` once from Apps Script and then refresh the dashboard.
 
+After the first successful visit, the browser keeps the last successful KPI
+snapshot. On later visits, the indicators appear immediately while fresh cloud
+data loads in the background. A temporary Apps Script error shows a warning and
+Retry button without removing the last available dashboard.
+
 ## 5. Main Reporting Rules
 
 | Measure | Rule |
@@ -109,4 +114,3 @@ tables are currently disabled.
 - Spreadsheet: <https://docs.google.com/spreadsheets/d/1uB9hiqI8z46_fYxiB1syRwNNw0TM_ZV2NCYZcAVmWIk/edit>
 - Detailed installation, calculation, testing, and troubleshooting guide:
   [README.md](README.md)
-

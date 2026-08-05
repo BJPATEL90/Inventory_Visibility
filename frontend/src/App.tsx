@@ -20,6 +20,8 @@ import {
   downloadTransactionsCsv,
   getActivityStatus,
   getBinMaster,
+  getCachedConfig,
+  getCachedDashboard,
   getConfig,
   getDashboard,
   getFacilityDashboard,
@@ -885,19 +887,22 @@ export default function App() {
   const configQuery = useQuery({
     queryKey: ['config'],
     queryFn: getConfig,
+    initialData: getCachedConfig,
     staleTime: 5 * 60 * 1000,
-    retry: 1
+    retry: 2,
+    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 5000)
   });
 
-  const refreshInterval = configQuery.data?.data.autoRefreshMinutes
-    ? configQuery.data.data.autoRefreshMinutes * 60 * 1000
-    : false;
+  const refreshInterval =
+    (configQuery.data?.data.autoRefreshMinutes || 30) * 60 * 1000;
 
   const dashboardQuery = useQuery({
     queryKey: ['dashboard'],
     queryFn: getDashboard,
+    initialData: getCachedDashboard,
     refetchInterval: refreshInterval,
-    retry: 1
+    retry: 2,
+    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 5000)
   });
 
   const dashboard = dashboardQuery.data?.data;
@@ -1028,14 +1033,15 @@ export default function App() {
   }, [selectedAbcPeriod]);
 
   const isLoading =
-    configQuery.isLoading ||
-    dashboardQuery.isLoading ||
+    (!dashboard && dashboardQuery.isLoading) ||
     (SHOW_MASTERS &&
       (binMasterQuery.isLoading || skuMasterQuery.isLoading));
   const error =
-    configQuery.error ||
-    dashboardQuery.error ||
+    (!dashboard && dashboardQuery.error) ||
     (SHOW_MASTERS && (binMasterQuery.error || skuMasterQuery.error));
+  const backgroundDataError = dashboard
+    ? dashboardQuery.error || configQuery.error
+    : null;
   const isRefreshing =
     configQuery.isFetching ||
     dashboardQuery.isFetching ||
@@ -1193,9 +1199,9 @@ export default function App() {
           }
           onRetry={retryAll}
         />
-      ) : !dashboard || !config ? (
+      ) : !dashboard ? (
         <ErrorState
-          message="The API response did not include dashboard configuration."
+          message="The API response did not include dashboard data."
           onRetry={retryAll}
         />
       ) : dashboard.sourceSummary.totalTransactionRowCount === 0 ? (
@@ -1218,6 +1224,33 @@ export default function App() {
             onChange={updateFilter}
             onClear={clearFilters}
           />
+
+          {backgroundDataError ? (
+            <section
+              role="status"
+              className="border-b border-amber-300 bg-amber-50 px-4 py-3 text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100"
+            >
+              <div className="mx-auto flex max-w-[1600px] flex-col gap-2 text-sm sm:flex-row sm:items-center sm:justify-between sm:px-2">
+                <p>
+                  <strong>Latest cloud refresh is temporarily unavailable.</strong>{' '}
+                  Showing the last successful KPI snapshot from{' '}
+                  {formatRefreshTime(lastRefreshTime)}.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void Promise.all([
+                      dashboardQuery.refetch(),
+                      configQuery.refetch()
+                    ]);
+                  }}
+                  className="w-fit rounded-lg border border-amber-400 bg-white px-3 py-1.5 text-xs font-bold text-amber-900 transition hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-100 dark:hover:bg-amber-900"
+                >
+                  Retry latest data
+                </button>
+              </div>
+            </section>
+          ) : null}
 
           <main className="mx-auto max-w-[1600px] px-4 py-8 sm:px-6 lg:px-8">
             <QuantityAccuracyBanner

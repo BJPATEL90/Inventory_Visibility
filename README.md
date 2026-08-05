@@ -18,6 +18,13 @@ The Apps Script refresh and email triggers run in Google's cloud. After they are
 installed, the dashboard can refresh its cached summary and send scheduled
 emails even when the user's laptop is switched off.
 
+For faster startup, the frontend saves the last successful Dashboard and Config
+responses in the user's browser. Returning users see the saved KPI banners
+immediately while the latest Apps Script response loads in the background. If
+Google temporarily returns a Web App error, the saved dashboard remains visible
+with a warning and Retry button. A new browser or cleared browser storage needs
+one successful load before this fallback is available.
+
 ## Current release
 
 The current frontend contains two visible sections:
@@ -864,6 +871,10 @@ Check:
 - the latest Apps Script version is deployed
 - the Web App access setting permits the browser request
 - `YOUR_WEB_APP_URL?action=config` works directly
+
+After one successful dashboard visit, later temporary API failures keep the
+last successful KPI snapshot visible. Use the warning's **Retry latest data**
+button to try the cloud refresh again.
 
 ## Frontend still shows old backend results
 

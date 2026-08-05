@@ -12,6 +12,49 @@ import type {
 const APPS_SCRIPT_URL = String(
   import.meta.env.VITE_APPS_SCRIPT_URL || ''
 ).trim();
+const DASHBOARD_SNAPSHOT_KEY = 'inventory-dashboard-snapshot-v1';
+const CONFIG_SNAPSHOT_KEY = 'inventory-config-snapshot-v1';
+
+interface StoredSnapshot<T> {
+  savedAt: string;
+  response: ApiResponse<T>;
+}
+
+function readSnapshot<T>(key: string) {
+  if (typeof window === 'undefined') {
+    return undefined;
+  }
+
+  try {
+    const storedText = window.localStorage.getItem(key);
+    if (!storedText) {
+      return undefined;
+    }
+
+    const stored = JSON.parse(storedText) as StoredSnapshot<T>;
+    return stored.response?.success && stored.response.data
+      ? stored.response
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function saveSnapshot<T>(key: string, response: ApiResponse<T>) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    const stored: StoredSnapshot<T> = {
+      savedAt: new Date().toISOString(),
+      response
+    };
+    window.localStorage.setItem(key, JSON.stringify(stored));
+  } catch {
+    // A storage restriction must never prevent the live dashboard from loading.
+  }
+}
 
 function getApiUrl(
   action: string,
@@ -44,7 +87,8 @@ async function request<T>(
     headers: {
       Accept: 'application/json'
     },
-    redirect: 'follow'
+    redirect: 'follow',
+    cache: 'no-store'
   });
 
   if (!response.ok) {
@@ -71,8 +115,14 @@ async function request<T>(
   return payload;
 }
 
-export function getDashboard() {
-  return request<DashboardData>('dashboard');
+export function getCachedDashboard() {
+  return readSnapshot<DashboardData>(DASHBOARD_SNAPSHOT_KEY);
+}
+
+export async function getDashboard() {
+  const response = await request<DashboardData>('dashboard');
+  saveSnapshot(DASHBOARD_SNAPSHOT_KEY, response);
+  return response;
 }
 
 function transactionParameters(query: TransactionQuery) {
@@ -148,8 +198,14 @@ export async function downloadTransactionsCsv(query: TransactionQuery) {
   };
 }
 
-export function getConfig() {
-  return request<DashboardConfig>('config');
+export function getCachedConfig() {
+  return readSnapshot<DashboardConfig>(CONFIG_SNAPSHOT_KEY);
+}
+
+export async function getConfig() {
+  const response = await request<DashboardConfig>('config');
+  saveSnapshot(CONFIG_SNAPSHOT_KEY, response);
+  return response;
 }
 
 export function getBinMaster() {

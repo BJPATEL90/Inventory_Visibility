@@ -26,7 +26,7 @@ const SOURCE_SHEETS = [
   'SL_MH',
   'SL_RX',
   'OWN',
-  'SL_B2C'
+  'B2C'
 ];
 
 const INVENTORY_HEADERS = [
@@ -1992,6 +1992,35 @@ function testCycleCoverageApi() {
 }
 
 /**
+ * Audits the latest Gmail inventory messages without downloading or saving.
+ * Run this when importLatestInventoryEmail() cannot select an email.
+ */
+function testInventoryEmailSearch() {
+  const config = getConfig();
+  const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = spreadsheet.getSheetByName(CYCLE_COVERAGE_SHEET_NAME);
+  const processedMessageIds = coverageProcessedMessageIds_(sheet);
+  const search = findLatestInventoryEmail_(
+    config,
+    processedMessageIds,
+    true
+  );
+  const result = {
+    candidateFound: Boolean(search.candidate),
+    coverageCycleStartDate: config.coverageCycleStartDate,
+    expectedSender: config.inventoryEmailSender,
+    expectedSubject: config.inventoryEmailSubject,
+    expectedExportName: config.inventoryExportName,
+    searchedMessageCount: search.searchedMessageCount,
+    rejectionSummary: search.rejectionSummary,
+    latestMessages: search.diagnostics
+  };
+
+  console.log(JSON.stringify(result, null, 2));
+  return result;
+}
+
+/**
  * Audits the SL_B2C parent sheet without editing it.
  *
  * The sheet may remain header-only until cycle-count data is available, but it
@@ -2406,79 +2435,20 @@ function importLatestInventoryEmail() {
     const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
     const sheet = setupCycleCoverageSheet_(spreadsheet);
     const processedMessageIds = coverageProcessedMessageIds_(sheet);
-    const searchQuery = [
-      'from:(' + config.inventoryEmailSender + ')',
-      'subject:"' + gmailSearchText_(config.inventoryEmailSubject) + '"',
-      'newer_than:' + INVENTORY_EMAIL_SEARCH_DAYS + 'd'
-    ].join(' ');
-    const messages = [];
-
-    GmailApp.search(searchQuery, 0, 30).forEach(function (thread) {
-      thread.getMessages().forEach(function (message) {
-        messages.push(message);
-      });
-    });
-
-    messages.sort(function (first, second) {
-      return second.getDate().getTime() - first.getDate().getTime();
-    });
-
-    let candidate = null;
-
-    for (let index = 0; index < messages.length; index += 1) {
-      const message = messages[index];
-      const messageId = message.getId();
-
-      if (processedMessageIds[messageId]) {
-        continue;
-      }
-
-      const senderMatches = message.getFrom().toLowerCase().indexOf(
-        config.inventoryEmailSender.toLowerCase()
-      ) >= 0;
-      const subjectMatches = cleanText_(message.getSubject()) ===
-        cleanText_(config.inventoryEmailSubject);
-      const plainBody = message.getPlainBody();
-      const exportMatches = plainBody.toLowerCase().indexOf(
-        config.inventoryExportName.toLowerCase()
-      ) >= 0;
-      const successful = /status\s*:\s*successful/i.test(plainBody);
-      const sourceUrl = extractInventoryCsvUrl_(
-        plainBody + '\n' + message.getBody()
-      );
-      const sourceFile = inventoryFileNameFromUrl_(sourceUrl);
-      const reportDate = inventoryDateFromFileName_(sourceFile) ||
-        Utilities.formatDate(
-          message.getDate(),
-          getTimeZone_(),
-          'yyyy-MM-dd'
-        );
-
-      if (
-        senderMatches &&
-        subjectMatches &&
-        exportMatches &&
-        successful &&
-        sourceUrl &&
-        reportDate >= config.coverageCycleStartDate
-      ) {
-        candidate = {
-          message: message,
-          messageId: messageId,
-          sourceUrl: sourceUrl,
-          sourceFile: sourceFile,
-          reportDate: reportDate
-        };
-        break;
-      }
-    }
+    const emailSearch = findLatestInventoryEmail_(
+      config,
+      processedMessageIds,
+      false
+    );
+    const candidate = emailSearch.candidate;
 
     if (!candidate) {
       const skippedResult = {
         imported: false,
         skipped: true,
         message: 'No new successful inventory export email was found.',
-        searchedMessageCount: messages.length
+        searchedMessageCount: emailSearch.searchedMessageCount,
+        rejectionSummary: emailSearch.rejectionSummary
       };
       console.log(JSON.stringify(skippedResult, null, 2));
       return skippedResult;
@@ -2532,6 +2502,151 @@ function importLatestInventoryEmail() {
   } finally {
     lock.releaseLock();
   }
+}
+
+/**
+ * Finds the newest eligible Gmail export and optionally returns diagnostics.
+ * Email bodies and download URLs are never included in the diagnostic output.
+ */
+function findLatestInventoryEmail_(
+  config,
+  processedMessageIds,
+  includeDiagnostics
+) {
+  const searchQuery = [
+    'from:(' + config.inventoryEmailSender + ')',
+    'subject:"' + gmailSearchText_(config.inventoryEmailSubject) + '"',
+    'newer_than:' + INVENTORY_EMAIL_SEARCH_DAYS + 'd'
+  ].join(' ');
+  const messages = [];
+
+  GmailApp.search(searchQuery, 0, 30).forEach(function (thread) {
+    thread.getMessages().forEach(function (message) {
+      messages.push(message);
+    });
+  });
+
+  messages.sort(function (first, second) {
+    return second.getDate().getTime() - first.getDate().getTime();
+  });
+
+  const rejectionSummary = {
+    alreadyProcessed: 0,
+    senderMismatch: 0,
+    subjectMismatch: 0,
+    exportNameMissing: 0,
+    successfulStatusMissing: 0,
+    csvUrlMissing: 0,
+    beforeCycleStart: 0
+  };
+  const diagnostics = [];
+  let candidate = null;
+
+  for (let index = 0; index < messages.length; index += 1) {
+    const message = messages[index];
+    const messageId = message.getId();
+    const from = cleanText_(message.getFrom());
+    const subject = cleanText_(message.getSubject());
+    const plainBody = message.getPlainBody();
+    const htmlBody = message.getBody();
+    const combinedBody = plainBody + '\n' + htmlBody;
+    const alreadyProcessed = Boolean(processedMessageIds[messageId]);
+    const senderMatches = from.toLowerCase().indexOf(
+      config.inventoryEmailSender.toLowerCase()
+    ) >= 0;
+    const subjectMatches = subject ===
+      cleanText_(config.inventoryEmailSubject);
+    const exportMatches = combinedBody.toLowerCase().indexOf(
+      config.inventoryExportName.toLowerCase()
+    ) >= 0;
+    const successful = /status\s*:\s*successful/i.test(combinedBody);
+    const sourceUrl = extractInventoryCsvUrl_(combinedBody);
+    const sourceFile = inventoryFileNameFromUrl_(sourceUrl);
+    const reportDate = inventoryDateFromFileName_(sourceFile) ||
+      Utilities.formatDate(
+        message.getDate(),
+        getTimeZone_(),
+        'yyyy-MM-dd'
+      );
+    const onOrAfterCycleStart = Boolean(
+      reportDate && reportDate >= config.coverageCycleStartDate
+    );
+    const rejectionReasons = [];
+
+    if (alreadyProcessed) {
+      rejectionSummary.alreadyProcessed += 1;
+      rejectionReasons.push('alreadyProcessed');
+    }
+    if (!senderMatches) {
+      rejectionSummary.senderMismatch += 1;
+      rejectionReasons.push('senderMismatch');
+    }
+    if (!subjectMatches) {
+      rejectionSummary.subjectMismatch += 1;
+      rejectionReasons.push('subjectMismatch');
+    }
+    if (!exportMatches) {
+      rejectionSummary.exportNameMissing += 1;
+      rejectionReasons.push('exportNameMissing');
+    }
+    if (!successful) {
+      rejectionSummary.successfulStatusMissing += 1;
+      rejectionReasons.push('successfulStatusMissing');
+    }
+    if (!sourceUrl) {
+      rejectionSummary.csvUrlMissing += 1;
+      rejectionReasons.push('csvUrlMissing');
+    }
+    if (!onOrAfterCycleStart) {
+      rejectionSummary.beforeCycleStart += 1;
+      rejectionReasons.push('beforeCycleStart');
+    }
+
+    const accepted = rejectionReasons.length === 0;
+
+    if (includeDiagnostics && diagnostics.length < 10) {
+      diagnostics.push({
+        emailDate: Utilities.formatDate(
+          message.getDate(),
+          getTimeZone_(),
+          'yyyy-MM-dd HH:mm:ss'
+        ),
+        from: from,
+        subject: subject,
+        alreadyProcessed: alreadyProcessed,
+        senderMatches: senderMatches,
+        subjectMatches: subjectMatches,
+        exportMatches: exportMatches,
+        successfulStatusFound: successful,
+        csvUrlFound: Boolean(sourceUrl),
+        sourceFile: sourceFile,
+        reportDate: reportDate,
+        onOrAfterCycleStart: onOrAfterCycleStart,
+        accepted: accepted,
+        rejectionReasons: rejectionReasons
+      });
+    }
+
+    if (accepted && !candidate) {
+      candidate = {
+        messageId: messageId,
+        sourceUrl: sourceUrl,
+        sourceFile: sourceFile,
+        reportDate: reportDate
+      };
+
+      if (!includeDiagnostics) {
+        break;
+      }
+    }
+  }
+
+  return {
+    candidate: candidate,
+    searchedMessageCount: messages.length,
+    rejectionSummary: rejectionSummary,
+    diagnostics: diagnostics
+  };
 }
 
 /** Returns the MTD facility coverage response used by the V2 frontend. */

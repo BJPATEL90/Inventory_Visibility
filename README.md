@@ -73,15 +73,15 @@ opening quantity and coverage percentage. `BAD_INVENTORY` and `QC_REJECTED`
 quantities are stored separately for audit but are not displayed and never
 enter the completion calculation.
 
-The daily cycle-count source tab is `SL_B2C`. It is only a parent sheet
+The daily cycle-count source tab is `B2C`. It is only a parent sheet
 name. Its new `Facility` or `Facility Name` column must contain `SL_MM`,
-`SLLJ`, or `SL_BW`. `SL_B2C` itself is never displayed as a facility. Blank
+`SL_LJ`/`SLLJ`, or `SL_BW`. `B2C` itself is never displayed as a facility. Blank
 or unsupported values are skipped and listed by
-`testSlB2cFacilityMapping()`.
+`testB2cFacilityMapping()`.
 
 This is separate from the daily inventory CSV. The CSV contains the facility
 names `SL MM`, `SLLJ`, and `SL BW`; it is not expected to contain a facility
-named `SL_B2C`.
+named `B2C`.
 
 ### V2 quantity completion formula
 
@@ -142,7 +142,7 @@ the production project:
 
 1. Run `testCycleCoverageCalculations()` - it changes nothing and verifies
    exact OWN, inventory-type separation, and counted-quantity grouping.
-2. Run `testSlB2cFacilityMapping()` - it changes nothing and prints accepted
+2. Run `testB2cFacilityMapping()` - it changes nothing and prints accepted
    SL_MM/SL_LJ/SL_BW row counts plus skipped source row numbers.
 3. Run `setupCycleCoverageV2()` - it adds the optional Config rows, creates the
    hidden system sheet, and creates only the Gmail import trigger. It does not
@@ -313,7 +313,7 @@ The backend reads:
 - `SL_MH`
 - `SL_RX`
 - `OWN`
-- `SL_B2C`
+- `B2C`
 
 Each source sheet must use this header row:
 
@@ -321,7 +321,7 @@ Each source sheet must use this header row:
 Date | Rack | Sku Code | Item Name | Shelf | Batch | Vendor Batch Number | Pack | Box | Loose | Phy | Sys | Diff | Remark
 ```
 
-The `SL_B2C` sheet also requires a `Facility` or `Facility Name` column.
+The `B2C` sheet also requires a `Facility` or `Facility Name` column.
 
 Header matching ignores case, extra spaces, and periods, so `Diff` and `Diff.`
 are both accepted.

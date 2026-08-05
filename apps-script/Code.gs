@@ -134,7 +134,7 @@ const INVENTORY_EXPORT_FACILITY_MAP = {
   'SL BW': 'SL_BW',
   'OWN': 'OWN'
 };
-const SL_B2C_SOURCE_FACILITY_MAP = {
+const B2C_SOURCE_FACILITY_MAP = {
   'SL MM': 'SL_MM',
   'SL_MM': 'SL_MM',
   'SLLJ': 'SL_LJ',
@@ -225,7 +225,7 @@ function doGet(e) {
  * One-time application setup.
  *
  * This function creates or completes only Config and Activity_Status.
- * It does not edit SL_AMBIENT, SL_MH, SL_RX, OWN, or SL_B2C.
+ * It does not edit SL_AMBIENT, SL_MH, SL_RX, OWN, or B2C.
  */
 function setupApplication() {
   const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
@@ -376,8 +376,8 @@ function getConfig() {
  * - Missing, empty, and header-only sheets are skipped.
  * - The first row is treated as the header.
  * - Blank rows are ignored.
- * - Facility is added from the source sheet name, except SL_B2C.
- * - SL_B2C uses its Facility column for SL_MM, SL_LJ, or SL_BW.
+ * - Facility is added from the source sheet name, except B2C.
+ * - B2C uses its Facility column for SL_MM, SL_LJ, or SL_BW.
  * - The existing physical Combine sheet is not read or changed.
  *
  * The live source sheets use "Diff." while the requested logical name is
@@ -394,7 +394,7 @@ function getCombinedData(
   const costMap = optionalCostMap || readCostMap_(spreadsheet);
   const abcClassMap = optionalAbcClassMap || {};
   const timeZone = getTimeZone_();
-  const skippedSlB2cFacilityRows = [];
+  const skippedB2cFacilityRows = [];
 
   SOURCE_SHEETS.forEach(function (sheetName) {
     const sheet = spreadsheet.getSheetByName(sheetName);
@@ -422,12 +422,12 @@ function getCombinedData(
           : row[indexes.Facility]
       );
 
-      // SL_B2C is only a parent sheet name. Rows without one of the three
+      // B2C is only a parent sheet name. Rows without one of the three
       // approved facility values are intentionally excluded instead of being
-      // incorrectly reported as an SL_B2C facility.
+      // incorrectly reported as a B2C facility.
       if (!facility) {
-        if (sheetName === 'SL_B2C') {
-          skippedSlB2cFacilityRows.push(rowIndex + 1);
+        if (sheetName === 'B2C') {
+          skippedB2cFacilityRows.push(rowIndex + 1);
         }
         continue;
       }
@@ -488,12 +488,12 @@ function getCombinedData(
     }
   });
 
-  if (skippedSlB2cFacilityRows.length > 0) {
+  if (skippedB2cFacilityRows.length > 0) {
     console.warn(JSON.stringify({
-      sourceSheet: 'SL_B2C',
+      sourceSheet: 'B2C',
       reason: 'Blank or unsupported Facility value',
-      skippedRowCount: skippedSlB2cFacilityRows.length,
-      firstSkippedRowNumbers: skippedSlB2cFacilityRows.slice(0, 100)
+      skippedRowCount: skippedB2cFacilityRows.length,
+      firstSkippedRowNumbers: skippedB2cFacilityRows.slice(0, 100)
     }));
   }
 
@@ -2017,11 +2017,36 @@ function testCycleCoverageCalculations() {
   assertEqual_(parsed.ignoredFacilityRowCount, 1, 'OWN child exclusion');
   assertEqual_(counts['2026-08-01'].SL_MM, 10, 'Day 1 counted qty');
   assertEqual_(counts['2026-08-02'].SL_MM, 15, 'Day 2 counted qty');
+  assertEqual_(
+    sourceFacilityName_('B2C', 'SL_MM'),
+    'SL_MM',
+    'B2C SL_MM mapping'
+  );
+  assertEqual_(
+    sourceFacilityName_('B2C', 'SLLJ'),
+    'SL_LJ',
+    'B2C SLLJ mapping'
+  );
+  assertEqual_(
+    sourceFacilityName_('B2C', 'SL_BW'),
+    'SL_BW',
+    'B2C SL_BW mapping'
+  );
+  assertEqual_(
+    sourceFacilityName_('B2C', 'SL_B2C'),
+    '',
+    'B2C parent name exclusion'
+  );
 
   const result = {
     passed: true,
     rule: 'Completion uses GOOD_INVENTORY Quantity only.',
     exactOwnOnly: true,
+    b2cFacilityMapping: {
+      SL_MM: sourceFacilityName_('B2C', 'SL_MM'),
+      SL_LJ: sourceFacilityName_('B2C', 'SLLJ'),
+      SL_BW: sourceFacilityName_('B2C', 'SL_BW')
+    },
     sampleFacilities: parsed.facilities,
     ignoredFacilityRowCount: parsed.ignoredFacilityRowCount,
     countedByDate: counts
@@ -2068,21 +2093,21 @@ function testInventoryEmailSearch() {
 }
 
 /**
- * Audits the SL_B2C parent sheet without editing it.
+ * Audits the B2C parent sheet without editing it.
  *
  * The sheet may remain header-only until cycle-count data is available, but it
  * must include a Facility or Facility Name header before SL_MM, SL_LJ, and
  * SL_BW rows can be loaded.
  */
-function testSlB2cFacilityMapping() {
+function testB2cFacilityMapping() {
   const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const sheet = spreadsheet.getSheetByName('SL_B2C');
+  const sheet = spreadsheet.getSheetByName('B2C');
 
   if (!sheet) {
     const missingResult = {
       passed: false,
-      sourceSheet: 'SL_B2C',
-      message: 'SL_B2C does not exist in Inventory_Dashboard.'
+      sourceSheet: 'B2C',
+      message: 'B2C does not exist in Inventory_Dashboard.'
     };
     console.log(JSON.stringify(missingResult, null, 2));
     return missingResult;
@@ -2105,13 +2130,13 @@ function testSlB2cFacilityMapping() {
   if (sheet.getLastRow() <= 1) {
     const headerOnlyResult = {
       passed: facilityColumnFound,
-      sourceSheet: 'SL_B2C',
+      sourceSheet: 'B2C',
       sourceDataRowCount: 0,
       facilityColumnFound: facilityColumnFound,
       facilityColumnNumber: facilityColumnFound ? facilityIndex + 1 : null,
       message: facilityColumnFound
-        ? 'SL_B2C is ready but currently contains no cycle-count data rows.'
-        : 'Add Facility or Facility Name as the next header in SL_B2C before loading SL_MM, SL_LJ, or SL_BW rows.'
+        ? 'B2C is ready but currently contains no cycle-count data rows.'
+        : 'Add Facility or Facility Name as the next header in B2C before loading SL_MM, SL_LJ, or SL_BW rows.'
     };
     console.log(JSON.stringify(headerOnlyResult, null, 2));
     return headerOnlyResult;
@@ -2120,7 +2145,7 @@ function testSlB2cFacilityMapping() {
   const values = sheet
     .getRange(1, 1, sheet.getLastRow(), sheet.getLastColumn())
     .getValues();
-  const indexes = inventoryHeaderIndexes_(values[0], 'SL_B2C');
+  const indexes = inventoryHeaderIndexes_(values[0], 'B2C');
   const rowsByFacility = emptyFacilityNumberMap_();
   const skippedRowNumbers = [];
 
@@ -2131,7 +2156,7 @@ function testSlB2cFacilityMapping() {
     }
 
     const facility = sourceFacilityName_(
-      'SL_B2C',
+      'B2C',
       row[indexes.Facility]
     );
     if (facility) {
@@ -2143,7 +2168,7 @@ function testSlB2cFacilityMapping() {
 
   const result = {
     passed: skippedRowNumbers.length === 0,
-    sourceSheet: 'SL_B2C',
+    sourceSheet: 'B2C',
     sourceDataRowCount: values.length - 1,
     facilityColumnFound: true,
     rowsByFacility: {
@@ -2159,9 +2184,9 @@ function testSlB2cFacilityMapping() {
   return result;
 }
 
-/** Backward-compatible test name used during the B2C naming diagnosis. */
-function testB2cFacilityMapping() {
-  return testSlB2cFacilityMapping();
+/** Backward-compatible test name used by the first B2C test copy. */
+function testSlB2cFacilityMapping() {
+  return testB2cFacilityMapping();
 }
 
 /**
@@ -4587,9 +4612,9 @@ function inventoryHeaderIndexes_(headerRow, sheetName) {
     );
   }
 
-  if (sheetName === 'SL_B2C' && facilityIndex < 0) {
+  if (sheetName === 'B2C' && facilityIndex < 0) {
     throw new Error(
-      'Sheet "SL_B2C" must contain the new Facility column for ' +
+      'Sheet "B2C" must contain the Facility column for ' +
         'SL_MM, SL_LJ, and SL_BW.'
     );
   }
@@ -4601,9 +4626,9 @@ function inventoryHeaderIndexes_(headerRow, sheetName) {
   return indexes;
 }
 
-/** Resolves a reporting facility without exposing SL_B2C as a facility. */
+/** Resolves a reporting facility without exposing B2C as a facility. */
 function sourceFacilityName_(sheetName, enteredFacility) {
-  if (sheetName !== 'SL_B2C') {
+  if (sheetName !== 'B2C') {
     return sheetName;
   }
 
@@ -4612,7 +4637,7 @@ function sourceFacilityName_(sheetName, enteredFacility) {
     .replace(/[-_]+/g, ' ')
     .replace(/\s+/g, ' ');
 
-  return SL_B2C_SOURCE_FACILITY_MAP[key] || '';
+  return B2C_SOURCE_FACILITY_MAP[key] || '';
 }
 
 /**

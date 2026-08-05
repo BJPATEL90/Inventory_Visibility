@@ -7,7 +7,8 @@ import {
 } from 'lucide-react';
 import type {
   CoverageFacilityKey,
-  CycleCoverageData
+  CycleCoverageData,
+  CycleCoverageRow
 } from '../types';
 
 const numberFormatter = new Intl.NumberFormat('en-IN', {
@@ -70,6 +71,104 @@ function ProgressBar({ value }: { value: number }) {
         style={{ width: progressWidth(value) }}
       />
     </div>
+  );
+}
+
+/** Reusable overall quantity-coverage banner for home and facility pages. */
+export function CycleCoverageBanner({
+  latest,
+  isLoading = false,
+  errorMessage = '',
+  onRetry,
+  className = ''
+}: {
+  latest?: CycleCoverageRow | null;
+  isLoading?: boolean;
+  errorMessage?: string;
+  onRetry?: () => void;
+  className?: string;
+}) {
+  if (!latest) {
+    return (
+      <section
+        className={`overflow-hidden rounded-3xl bg-gradient-to-r from-blue-950 via-blue-900 to-blue-800 p-6 text-white shadow-lg ${className}`}
+      >
+        <div className="flex min-h-32 flex-col items-center justify-center text-center">
+          {isLoading ? (
+            <RefreshCw className="h-8 w-8 animate-spin text-cyan-300" />
+          ) : (
+            <AlertCircle className="h-8 w-8 text-amber-300" />
+          )}
+          <p className="mt-3 text-sm font-bold uppercase tracking-[0.16em] text-blue-100">
+            {isLoading
+              ? 'Loading overall quantity coverage'
+              : 'Quantity coverage is unavailable'}
+          </p>
+          {!isLoading && errorMessage ? (
+            <>
+              <p className="mt-2 max-w-2xl text-sm text-blue-200">
+                {errorMessage}
+              </p>
+              {onRetry ? (
+                <button
+                  type="button"
+                  onClick={onRetry}
+                  className="mt-4 rounded-xl bg-white/15 px-4 py-2 text-sm font-bold text-white ring-1 ring-white/25 transition hover:bg-white/25"
+                >
+                  Try again
+                </button>
+              ) : null}
+            </>
+          ) : null}
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section
+      className={`overflow-hidden rounded-3xl bg-gradient-to-r from-blue-950 via-blue-900 to-blue-800 p-6 text-white shadow-lg ${className}`}
+    >
+      <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-200">
+            Overall quantity coverage
+          </p>
+          <p className="mt-2 text-5xl font-black tracking-tight">
+            {formatPercent(latest.totalCompletionPercent)}
+          </p>
+          <p className="mt-2 text-sm text-blue-200">
+            As of {formatDate(latest.date)}
+          </p>
+        </div>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <div className="rounded-2xl bg-white/10 px-4 py-3 ring-1 ring-white/15">
+            <p className="text-xs text-blue-200">Opening GOOD Qty</p>
+            <p className="mt-1 text-lg font-black">
+              {formatNumber(latest.totalGoodQuantity)}
+            </p>
+          </div>
+          <div className="rounded-2xl bg-white/10 px-4 py-3 ring-1 ring-white/15">
+            <p className="text-xs text-blue-200">Cumulative Counted</p>
+            <p className="mt-1 text-lg font-black">
+              {formatNumber(latest.totalCumulativeCountedQuantity)}
+            </p>
+          </div>
+          <div className="col-span-2 rounded-2xl bg-white/10 px-4 py-3 ring-1 ring-white/15 sm:col-span-1">
+            <p className="text-xs text-blue-200">Counted Today</p>
+            <p className="mt-1 text-lg font-black">
+              {formatNumber(latest.totalDailyCountedQuantity)}
+            </p>
+          </div>
+        </div>
+      </div>
+      <div className="mt-6 h-3 overflow-hidden rounded-full bg-white/15">
+        <span
+          className="block h-full rounded-full bg-gradient-to-r from-cyan-400 to-emerald-400 transition-[width] duration-500"
+          style={{ width: progressWidth(latest.totalCompletionPercent) }}
+        />
+      </div>
+    </section>
   );
 }
 
@@ -180,47 +279,7 @@ export function CycleCoveragePage({
         </div>
       ) : null}
 
-      <section className="mt-6 overflow-hidden rounded-3xl bg-gradient-to-r from-blue-950 via-blue-900 to-blue-800 p-6 text-white shadow-lg">
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-200">
-              Overall quantity coverage
-            </p>
-            <p className="mt-2 text-5xl font-black tracking-tight">
-              {formatPercent(latest.totalCompletionPercent)}
-            </p>
-            <p className="mt-2 text-sm text-blue-200">
-              As of {formatDate(latest.date)}
-            </p>
-          </div>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-            <div className="rounded-2xl bg-white/10 px-4 py-3 ring-1 ring-white/15">
-              <p className="text-xs text-blue-200">Opening GOOD Qty</p>
-              <p className="mt-1 text-lg font-black">
-                {formatNumber(latest.totalGoodQuantity)}
-              </p>
-            </div>
-            <div className="rounded-2xl bg-white/10 px-4 py-3 ring-1 ring-white/15">
-              <p className="text-xs text-blue-200">Cumulative Counted</p>
-              <p className="mt-1 text-lg font-black">
-                {formatNumber(latest.totalCumulativeCountedQuantity)}
-              </p>
-            </div>
-            <div className="col-span-2 rounded-2xl bg-white/10 px-4 py-3 ring-1 ring-white/15 sm:col-span-1">
-              <p className="text-xs text-blue-200">Counted Today</p>
-              <p className="mt-1 text-lg font-black">
-                {formatNumber(latest.totalDailyCountedQuantity)}
-              </p>
-            </div>
-          </div>
-        </div>
-        <div className="mt-6 h-3 overflow-hidden rounded-full bg-white/15">
-          <span
-            className="block h-full rounded-full bg-gradient-to-r from-cyan-400 to-emerald-400 transition-[width] duration-500"
-            style={{ width: progressWidth(latest.totalCompletionPercent) }}
-          />
-        </div>
-      </section>
+      <CycleCoverageBanner latest={latest} className="mt-6" />
 
       {latest.alertNote ? (
         <div className="mt-4 flex items-start gap-3 rounded-2xl border border-amber-300 bg-amber-50 px-5 py-4 text-sm text-amber-950 shadow-sm dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100">

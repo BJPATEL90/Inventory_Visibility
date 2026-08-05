@@ -31,7 +31,10 @@ import {
   getTransactions
 } from './api';
 import { FilterBar } from './components/FilterBar';
-import { CycleCoveragePage } from './components/CycleCoveragePage';
+import {
+  CycleCoverageBanner,
+  CycleCoveragePage
+} from './components/CycleCoveragePage';
 import { InventoryTable } from './components/InventoryTable';
 import { KpiCard } from './components/KpiCard';
 import {
@@ -993,7 +996,8 @@ export default function App() {
     queryKey: ['cycleCoverage', coverageMonth],
     queryFn: () => getCycleCoverage(coverageMonth),
     initialData: coverageMonth ? undefined : getCachedCycleCoverage,
-    enabled: activePage === 'facilityProgress',
+    enabled:
+      activePage === 'kpi' || activePage === 'facilityProgress',
     refetchInterval: refreshInterval,
     retry: 1
   });
@@ -1084,7 +1088,8 @@ export default function App() {
     configQuery.isFetching ||
     dashboardQuery.isFetching ||
     (activePage === 'transactions' && transactionsQuery.isFetching) ||
-    (activePage === 'facilityProgress' && cycleCoverageQuery.isFetching) ||
+    ((activePage === 'kpi' || activePage === 'facilityProgress') &&
+      cycleCoverageQuery.isFetching) ||
     (SHOW_MASTERS &&
       (binMasterQuery.isFetching || skuMasterQuery.isFetching));
 
@@ -1098,7 +1103,7 @@ export default function App() {
       requests.push(transactionsQuery.refetch());
     }
 
-    if (activePage === 'facilityProgress') {
+    if (activePage === 'kpi' || activePage === 'facilityProgress') {
       requests.push(cycleCoverageQuery.refetch());
     }
 
@@ -1194,6 +1199,12 @@ export default function App() {
         ? 'The selected transaction data could not be loaded.'
         : ''
     : '';
+  const cycleCoverageErrorMessage =
+    cycleCoverageQuery.error instanceof Error
+      ? cycleCoverageQuery.error.message
+      : cycleCoverageQuery.error
+        ? 'The facility progress request failed.'
+        : '';
 
   let emptyTitle = 'No inventory data found';
   let emptyMessage =
@@ -1309,6 +1320,15 @@ export default function App() {
           <main className="mx-auto max-w-[1600px] px-4 py-8 sm:px-6 lg:px-8">
             {activePage === 'kpi' ? (
               <>
+            <CycleCoverageBanner
+              latest={cycleCoverageQuery.data?.data.latest}
+              isLoading={cycleCoverageQuery.isLoading}
+              errorMessage={cycleCoverageErrorMessage}
+              onRetry={() => {
+                void cycleCoverageQuery.refetch();
+              }}
+              className="mb-6"
+            />
             <QuantityAccuracyBanner
               periods={bannerPeriods || dashboard.periods}
               selectedPeriod={selectedAbcPeriod}
@@ -1464,11 +1484,7 @@ export default function App() {
                 data={cycleCoverageQuery.data?.data}
                 isLoading={cycleCoverageQuery.isLoading}
                 errorMessage={
-                  cycleCoverageQuery.error instanceof Error
-                    ? cycleCoverageQuery.error.message
-                    : cycleCoverageQuery.error
-                      ? 'The facility progress request failed.'
-                      : ''
+                  cycleCoverageErrorMessage
                 }
                 selectedMonth={coverageMonth}
                 onMonthChange={setCoverageMonth}

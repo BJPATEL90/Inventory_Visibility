@@ -132,12 +132,16 @@ available:
    exact OWN, inventory-type separation, and counted-quantity grouping.
 2. Run `testSlB2cFacilityMapping()` - it changes nothing and prints accepted
    SL_MM/SL_LJ/SL_BW row counts plus skipped source row numbers.
-3. Run `setupApplication()` - it adds the optional Config rows, creates the
-   hidden system sheet, and creates the Gmail import trigger.
+3. Run `setupCycleCoverageV2()` - it adds the optional Config rows, creates the
+   hidden system sheet, and creates only the Gmail import trigger. It does not
+   create another dashboard refresh or daily report email trigger.
 4. Run `importLatestInventoryEmail()` - approve Gmail and external-request
    permissions, then check the execution log.
 5. Run `testCycleCoverageApi()` - confirm the MTD dates, facility totals, and
    completion percentages returned to the frontend.
+
+Run `removeCycleCoverageV2Trigger()` if the isolated test should stop checking
+Gmail. This removes only the V2 inventory-import trigger from that test project.
 
 ## Current V1 production release
 

@@ -660,6 +660,53 @@ function getTransactions(optionalParameters) {
 }
 
 /**
+ * Safely prepares only the V2 cycle-coverage feature for testing.
+ *
+ * Unlike setupApplication(), this function does not create a dashboard refresh
+ * trigger or a daily report email trigger. It therefore avoids duplicate V1
+ * emails when V2 is tested from a separate Apps Script project.
+ */
+function setupCycleCoverageV2() {
+  const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
+
+  setupConfigSheet_(spreadsheet);
+  const sheet = setupCycleCoverageSheet_(spreadsheet);
+  const inventoryImportTrigger = createInventoryImportTrigger();
+  const result = {
+    prepared: true,
+    spreadsheetName: spreadsheet.getName(),
+    systemSheetName: sheet.getName(),
+    systemSheetHidden: sheet.isSheetHidden(),
+    inventoryImportTrigger: inventoryImportTrigger,
+    dailyEmailTriggerCreated: false,
+    dashboardRefreshTriggerCreated: false
+  };
+
+  console.log(JSON.stringify(result, null, 2));
+  return result;
+}
+
+/** Removes only the V2 Gmail import trigger from the current script project. */
+function removeCycleCoverageV2Trigger() {
+  let removedCount = 0;
+
+  ScriptApp.getProjectTriggers().forEach(function (trigger) {
+    if (trigger.getHandlerFunction() === INVENTORY_IMPORT_HANDLER) {
+      ScriptApp.deleteTrigger(trigger);
+      removedCount += 1;
+    }
+  });
+
+  const result = {
+    removed: true,
+    handler: INVENTORY_IMPORT_HANDLER,
+    removedTriggerCount: removedCount
+  };
+  console.log(JSON.stringify(result, null, 2));
+  return result;
+}
+
+/**
  * Builds one transaction page from either fresh or already-read inventory.
  */
 function buildTransactionsResponse_(parameters, optionalInventoryData) {

@@ -100,7 +100,7 @@ const CONFIG_DEFAULTS = [
 // Version 2 coverage settings are optional until setupApplication() is run.
 // This keeps the existing V1 dashboard safe while V2 is tested locally.
 const CYCLE_COVERAGE_CONFIG_DEFAULTS = [
-  ['Coverage Cycle Start Date', '2026-08-01'],
+  ['Coverage Cycle Start Date', '2026-07-01'],
   ['Coverage Cycle Months', 3],
   ['Inventory Import Minutes', 30],
   ['Inventory Change Alert %', 5],
@@ -114,7 +114,7 @@ const CYCLE_COVERAGE_CONFIG_DEFAULTS = [
 
 const CYCLE_COVERAGE_SHEET_NAME = 'Cycle_Coverage_System';
 const INVENTORY_IMPORT_HANDLER = 'importLatestInventoryEmail';
-const INVENTORY_EMAIL_SEARCH_DAYS = 14;
+const INVENTORY_EMAIL_SEARCH_LIMIT = 100;
 const COVERAGE_FACILITIES = [
   'SL_AMBIENT',
   'SL_MH',
@@ -327,7 +327,7 @@ function getConfig() {
     coverageCycleStartDate: optionalDateSetting_(
       settings,
       'Coverage Cycle Start Date',
-      '2026-08-01',
+      '2026-07-01',
       spreadsheet.getSpreadsheetTimeZone()
     ),
     coverageCycleMonths: optionalNumberSetting_(
@@ -683,6 +683,47 @@ function setupCycleCoverageV2() {
     inventoryImportTrigger: inventoryImportTrigger,
     dailyEmailTriggerCreated: false,
     dashboardRefreshTriggerCreated: false
+  };
+
+  console.log(JSON.stringify(result, null, 2));
+  return result;
+}
+
+/**
+ * Corrects the 2026 Q2 coverage window and recalculates stored snapshots.
+ *
+ * Run this once in the existing V2 test project. It changes only the two
+ * coverage-cycle Config values and the calculated fields in the hidden system
+ * sheet. Inventory source sheets are never edited.
+ */
+function setQ2CoverageCycle2026() {
+  const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const configSheet = setupConfigSheet_(spreadsheet);
+  setConfigValue_(configSheet, 'Coverage Cycle Start Date', '2026-07-01');
+  setConfigValue_(configSheet, 'Coverage Cycle Months', 3);
+  SpreadsheetApp.flush();
+
+  const coverageSheet = setupCycleCoverageSheet_(spreadsheet);
+  const inventoryData = getAllInventoryData_();
+  const coverage = refreshCycleCoverageSystem_(
+    inventoryData.currentRows,
+    coverageSheet
+  );
+  const result = {
+    updated: true,
+    quarter: 'Q2',
+    cycleStartDate: '2026-07-01',
+    cycleEndDate: '2026-09-30',
+    storedSnapshotCount: coverage.rowCount,
+    latestCoverage: coverage.latest
+      ? {
+          date: coverage.latest.date,
+          totalCumulativeCountedQuantity:
+            coverage.latest.totalCumulativeCountedQuantity,
+          totalCompletionPercent:
+            coverage.latest.totalCompletionPercent
+        }
+      : null
   };
 
   console.log(JSON.stringify(result, null, 2));
@@ -2516,11 +2557,16 @@ function findLatestInventoryEmail_(
   const searchQuery = [
     'from:(' + config.inventoryEmailSender + ')',
     'subject:"' + gmailSearchText_(config.inventoryEmailSubject) + '"',
-    'newer_than:' + INVENTORY_EMAIL_SEARCH_DAYS + 'd'
+    '"' + gmailSearchText_(config.inventoryExportName) + '"',
+    'after:' + gmailDateBefore_(config.coverageCycleStartDate)
   ].join(' ');
   const messages = [];
 
-  GmailApp.search(searchQuery, 0, 30).forEach(function (thread) {
+  GmailApp.search(
+    searchQuery,
+    0,
+    INVENTORY_EMAIL_SEARCH_LIMIT
+  ).forEach(function (thread) {
     thread.getMessages().forEach(function (message) {
       messages.push(message);
     });
@@ -3329,6 +3375,20 @@ function normalizeInventoryType_(value) {
 /** Escapes a Config subject for the Gmail search query. */
 function gmailSearchText_(value) {
   return cleanText_(value).replace(/"/g, ' ');
+}
+
+/** Returns the day before yyyy-MM-dd in Gmail's yyyy/MM/dd format. */
+function gmailDateBefore_(dateText) {
+  const date = parseIsoDate_(dateText);
+  if (!date) {
+    throw new Error('Coverage Cycle Start Date must be yyyy-MM-dd.');
+  }
+
+  return Utilities.formatDate(
+    addDays_(date, -1),
+    getTimeZone_(),
+    'yyyy/MM/dd'
+  );
 }
 
 /** Returns a valid yyyy-MM filter or blank. */
@@ -4271,6 +4331,8 @@ function setupConfigSheet_(spreadsheet) {
       );
     }
   });
+
+  return sheet;
 }
 
 /**
@@ -4340,6 +4402,27 @@ function setupCycleCoverageSheet_(spreadsheet) {
   }
 
   return sheet;
+}
+
+/** Updates one Config setting, adding it only when it does not exist. */
+function setConfigValue_(sheet, settingName, value) {
+  const lastRow = sheet.getLastRow();
+  const names = lastRow > 1
+    ? sheet.getRange(2, 1, lastRow - 1, 1).getDisplayValues()
+    : [];
+
+  for (let index = 0; index < names.length; index += 1) {
+    if (cleanText_(names[index][0]) === settingName) {
+      sheet.getRange(index + 2, 2).setValue(value);
+      return index + 2;
+    }
+  }
+
+  const targetRow = lastRow + 1;
+  sheet.getRange(targetRow, 1, 1, 2).setValues([
+    [settingName, value]
+  ]);
+  return targetRow;
 }
 
 /** Builds the stable column layout for the hidden coverage sheet. */

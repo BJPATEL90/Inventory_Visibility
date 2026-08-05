@@ -114,7 +114,7 @@ existing values:
 
 | Setting | Initial value |
 | --- | --- |
-| Coverage Cycle Start Date | `2026-08-01` |
+| Coverage Cycle Start Date | `2026-07-01` |
 | Coverage Cycle Months | `3` |
 | Inventory Import Minutes | `30` |
 | Inventory Change Alert % | `5` |
@@ -126,6 +126,14 @@ The import trigger checks Gmail every configured number of minutes. Gmail
 Message IDs prevent duplicate imports. When the total opening GOOD quantity
 changes by at least the configured alert percentage, the Facility MTD Progress
 page displays the increase/decrease note.
+
+The 2026 Q2 cycle runs from **1 July 2026 through 30 September 2026**. If an
+existing V2 test copy was initially configured for August, paste the latest
+`Code.gs` and run `setQ2CoverageCycle2026()` once. It updates only the coverage
+dates in Config and recalculates the hidden coverage results; source sheets are
+not changed. The Gmail importer searches from the configured cycle start so
+July inventory snapshots can then be backfilled with repeated
+`importLatestInventoryEmail()` runs.
 
 ### V2 Apps Script test order
 

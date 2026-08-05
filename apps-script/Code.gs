@@ -2550,16 +2550,20 @@ function findLatestInventoryEmail_(
     const plainBody = message.getPlainBody();
     const htmlBody = message.getBody();
     const combinedBody = plainBody + '\n' + htmlBody;
+    const searchableBody = inventoryEmailSearchText_(
+      plainBody,
+      htmlBody
+    );
     const alreadyProcessed = Boolean(processedMessageIds[messageId]);
     const senderMatches = from.toLowerCase().indexOf(
       config.inventoryEmailSender.toLowerCase()
     ) >= 0;
     const subjectMatches = subject ===
       cleanText_(config.inventoryEmailSubject);
-    const exportMatches = combinedBody.toLowerCase().indexOf(
+    const exportMatches = searchableBody.toLowerCase().indexOf(
       config.inventoryExportName.toLowerCase()
     ) >= 0;
-    const successful = /status\s*:\s*successful/i.test(combinedBody);
+    const successful = inventoryEmailWasSuccessful_(searchableBody);
     const sourceUrl = extractInventoryCsvUrl_(combinedBody);
     const sourceFile = inventoryFileNameFromUrl_(sourceUrl);
     const reportDate = inventoryDateFromFileName_(sourceFile) ||
@@ -3276,6 +3280,29 @@ function inventoryFileNameFromUrl_(sourceUrl) {
   } catch (error) {
     return encodedName;
   }
+}
+
+/**
+ * Converts the plain and HTML email bodies into searchable readable text.
+ * This removes Gmail formatting tags while retaining labels and values.
+ */
+function inventoryEmailSearchText_(plainBody, htmlBody) {
+  return (String(plainBody || '') + '\n' + String(htmlBody || ''))
+    .replace(/<br\s*\/?\s*>/gi, '\n')
+    .replace(/<\/(?:p|div|tr|td|li)>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&(?:nbsp|#160|#xA0);/gi, ' ')
+    .replace(/&(?:colon|#58|#x3A);/gi, ':')
+    .replace(/&amp;/gi, '&')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** Accepts a SUCCESSFUL value shown beside the Status label. */
+function inventoryEmailWasSuccessful_(searchableBody) {
+  return /\bstatus\b.{0,40}\bsuccessful\b/i.test(
+    String(searchableBody || '')
+  );
 }
 
 /** Reads ddMMyyyy from the standard export filename. */

@@ -112,6 +112,15 @@ export interface DashboardData {
   };
 }
 
+export interface DashboardRefreshResult {
+  refreshed: boolean;
+  combinedRowCount: number;
+  rowsByFacility: Record<string, number>;
+  latestCoverageDate: string;
+  latestCoveragePercent: number;
+  refreshedAt: string;
+}
+
 export interface DashboardConfig {
   dashboardName: string;
   dailyPlannedBinCount: number;

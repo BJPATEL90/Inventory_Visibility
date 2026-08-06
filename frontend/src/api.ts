@@ -5,6 +5,7 @@ import type {
   CycleCoverageData,
   DashboardConfig,
   DashboardData,
+  DashboardRefreshResult,
   SkuMasterRow,
   TransactionPageData,
   TransactionQuery
@@ -125,6 +126,10 @@ export async function getDashboard() {
   const response = await request<DashboardData>('dashboard');
   saveSnapshot(DASHBOARD_SNAPSHOT_KEY, response);
   return response;
+}
+
+export function refreshDashboard() {
+  return request<DashboardRefreshResult>('refreshDashboard');
 }
 
 function transactionParameters(query: TransactionQuery) {

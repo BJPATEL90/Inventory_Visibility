@@ -87,6 +87,10 @@ columns; `Shelf` remains the unique bin identifier for B2C reporting. Only
 `Pack`, `Box`, `Loose`, SKU-description, batch, and difference columns are
 treated as optional instead of rejecting the complete B2C source.
 
+The `OWN` tab in the same external workbook is the authoritative OWN
+cycle-count source. It uses the standard Date/Rack/SKU/Shelf/Phy/Sys/Diff
+layout. The header-only OWN tab inside `Inventory_Dashboard` is not used.
+
 This is separate from the daily inventory CSV. The CSV contains the facility
 names `SL MM`, `SLLJ`, and `SL BW`; it is not expected to contain a facility
 named `B2C`.
@@ -320,10 +324,11 @@ The backend reads:
 - `SL_AMBIENT`
 - `SL_MH`
 - `SL_RX`
-- `OWN`
+- external workbook tab `OWN`
 - external workbook tab `B2C`
 
-The four `Inventory_Dashboard` source sheets must use this header row:
+The three `Inventory_Dashboard` source sheets and external `OWN` must use this
+header row:
 
 ```text
 Date | Rack | Sku Code | Item Name | Shelf | Batch | Vendor Batch Number | Pack | Box | Loose | Phy | Sys | Diff | Remark
@@ -352,6 +357,10 @@ The backend:
 - combines rows only in Apps Script memory
 - never creates or changes a physical `Combine` sheet
 - never changes the five source sheets
+
+The frontend Refresh button first asks Apps Script to reread both workbooks,
+recalculate the dashboard and coverage snapshot, and then refetches the visible
+cards. It is therefore different from simply reloading a cached API response.
 
 If `Diff` is blank, the backend calculates `Phy - Sys`. For normal rows, a
 supplied `Diff` value is used for absolute difference, Short, Excess, bin

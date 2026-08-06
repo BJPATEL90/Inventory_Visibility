@@ -28,7 +28,8 @@ import {
   getCycleCoverage,
   getDashboard,
   getSkuMaster,
-  getTransactions
+  getTransactions,
+  refreshDashboard
 } from './api';
 import { FilterBar } from './components/FilterBar';
 import {
@@ -925,6 +926,7 @@ export default function App() {
   const [tableSortDirection, setTableSortDirection] =
     useState<'asc' | 'desc'>('desc');
   const [isExportingCsv, setIsExportingCsv] = useState(false);
+  const [isManualRefreshing, setIsManualRefreshing] = useState(false);
   const [selectedAbcPeriod, setSelectedAbcPeriod] =
     useState<PeriodKey | null>(null);
   const debouncedTableSearch = useDebouncedValue(tableSearch, 400);
@@ -1097,6 +1099,7 @@ export default function App() {
     ? dashboardQuery.error || configQuery.error
     : null;
   const isRefreshing =
+    isManualRefreshing ||
     configQuery.isFetching ||
     dashboardQuery.isFetching ||
     (activePage === 'transactions' && transactionsQuery.isFetching) ||
@@ -1105,7 +1108,15 @@ export default function App() {
     (SHOW_MASTERS &&
       (binMasterQuery.isFetching || skuMasterQuery.isFetching));
 
-  function retryAll() {
+  async function retryAll() {
+    setIsManualRefreshing(true);
+
+    try {
+      await refreshDashboard();
+    } catch (error) {
+      console.error('The cloud dashboard refresh failed.', error);
+    }
+
     const requests: Promise<unknown>[] = [
       configQuery.refetch(),
       dashboardQuery.refetch()
@@ -1126,7 +1137,8 @@ export default function App() {
       );
     }
 
-    void Promise.all(requests);
+    await Promise.allSettled(requests);
+    setIsManualRefreshing(false);
   }
 
   function updateFilter(

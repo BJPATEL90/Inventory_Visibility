@@ -23,6 +23,7 @@ const SPREADSHEET_ID = '1uB9hiqI8z46_fYxiB1syRwNNw0TM_ZV2NCYZcAVmWIk';
 const B2C_SOURCE_SPREADSHEET_ID =
   '1_kBrwiM6ezFeE5kJFqeCMKcl7p_pe_XpNuVYhUmkUpw';
 const B2C_SOURCE_SHEET_NAME = 'B2C';
+const OWN_SOURCE_SHEET_NAME = 'OWN';
 
 const SOURCE_SHEETS = [
   'SL_AMBIENT',
@@ -56,7 +57,7 @@ const HISTORICAL_START_DATE = '2026-04-01';
 const HISTORICAL_END_DATE = '2026-06-30';
 const DEFAULT_TRANSACTION_PAGE_SIZE = 25;
 const MAX_TRANSACTION_PAGE_SIZE = 100;
-const TRANSACTION_CACHE_PREFIX = 'inventory_transaction_page_v1_';
+const TRANSACTION_CACHE_PREFIX = 'inventory_transaction_page_v2_external_own_';
 const TRANSACTION_CACHE_SECONDS = 600;
 const COST_HEADERS = [
   'SKU',
@@ -156,7 +157,7 @@ const ACTIVITY_REASONS = [
 ];
 
 const DASHBOARD_CACHE_KEY =
-  'inventory_dashboard_v6_external_b2c_v1';
+  'inventory_dashboard_v7_external_own_v1';
 const LAST_REFRESH_PROPERTY = 'INVENTORY_LAST_REFRESH_TIME';
 const LAST_EMAIL_SENT_PROPERTY = 'INVENTORY_LAST_EMAIL_SENT_TIME';
 const REFRESH_HANDLER = 'refreshDashboardCache';
@@ -188,6 +189,8 @@ function doGet(e) {
 
     if (action === 'dashboard') {
       data = getDashboardData();
+    } else if (action === 'refreshdashboard') {
+      data = refreshDashboardNow();
     } else if (action === 'transactions') {
       data = getTransactions(parameters);
     } else if (action === 'facilitydashboard') {
@@ -206,9 +209,11 @@ function doGet(e) {
       data = getB2cSourceAudit();
     } else if (action === 'facilitysourceaudit') {
       data = getFacilitySourceAudit(parameters.date || '');
+    } else if (action === 'ownsourceaudit') {
+      data = getOwnSourceAudit();
     } else {
       throw new Error(
-        'Unknown action. Use dashboard, transactions, transactionsCsv, facilityDashboard, binMaster, skuMaster, config, activityStatus, cycleCoverage, b2cSourceAudit, or facilitySourceAudit.'
+        'Unknown action. Use dashboard, refreshDashboard, transactions, transactionsCsv, facilityDashboard, binMaster, skuMaster, config, activityStatus, cycleCoverage, b2cSourceAudit, facilitySourceAudit, or ownSourceAudit.'
       );
     }
 
@@ -402,13 +407,17 @@ function getCombinedData(
   const abcClassMap = optionalAbcClassMap || {};
   const timeZone = getTimeZone_();
   const skippedB2cFacilityRows = [];
+  const externalCycleSpreadsheet = SpreadsheetApp.openById(
+    B2C_SOURCE_SPREADSHEET_ID
+  );
 
   SOURCE_SHEETS.forEach(function (sheetName) {
     if (sheetName === B2C_SOURCE_SHEET_NAME) {
       const b2cResult = readB2cCombinedRows_(
         costMap,
         abcClassMap,
-        timeZone
+        timeZone,
+        externalCycleSpreadsheet
       );
       Array.prototype.push.apply(combinedRows, b2cResult.rows);
       Array.prototype.push.apply(
@@ -418,7 +427,10 @@ function getCombinedData(
       return;
     }
 
-    const sheet = spreadsheet.getSheetByName(sheetName);
+    const sourceSpreadsheet = sheetName === OWN_SOURCE_SHEET_NAME
+      ? externalCycleSpreadsheet
+      : spreadsheet;
+    const sheet = sourceSpreadsheet.getSheetByName(sheetName);
 
     if (!sheet || sheet.getLastRow() <= 1 || sheet.getLastColumn() === 0) {
       return;
@@ -522,8 +534,14 @@ function getCombinedData(
  * Shelf, Total/Sys, and Phy are mandatory; descriptive quantity columns are
  * optional. Shelf is retained as the bin identifier when Rack is absent.
  */
-function readB2cCombinedRows_(costMap, abcClassMap, timeZone) {
-  const spreadsheet = SpreadsheetApp.openById(B2C_SOURCE_SPREADSHEET_ID);
+function readB2cCombinedRows_(
+  costMap,
+  abcClassMap,
+  timeZone,
+  optionalSpreadsheet
+) {
+  const spreadsheet = optionalSpreadsheet ||
+    SpreadsheetApp.openById(B2C_SOURCE_SPREADSHEET_ID);
   const sheet = spreadsheet.getSheetByName(B2C_SOURCE_SHEET_NAME);
 
   if (!sheet || sheet.getLastRow() <= 1 || sheet.getLastColumn() === 0) {
@@ -1806,6 +1824,28 @@ function getDashboardData() {
 }
 
 /**
+ * Forces a cloud-side rebuild for the dashboard Refresh button.
+ *
+ * This rereads the current source workbooks, updates the dashboard cache and
+ * hidden coverage snapshot, and returns only a small confirmation object.
+ */
+function refreshDashboardNow() {
+  const dashboard = refreshDashboardCache();
+  const coverage = getCycleCoverage('');
+
+  return {
+    refreshed: true,
+    combinedRowCount: dashboard.sourceSummary.combinedRowCount,
+    rowsByFacility: dashboard.sourceSummary.rowsByFacility,
+    latestCoverageDate: coverage.latest ? coverage.latest.date : '',
+    latestCoveragePercent: coverage.latest
+      ? coverage.latest.totalCompletionPercent
+      : 0,
+    refreshedAt: getLastRefreshTime_()
+  };
+}
+
+/**
  * Recalculates the summary and stores it in Google Apps Script Cache.
  *
  * This is the function used by the time-driven refresh trigger.
@@ -2369,6 +2409,115 @@ function getB2cSourceAudit() {
     quantitySummaryByFacility: quantitySummaryByFacility,
     mappingError: mappingError,
     requiredHeaders: requiredHeaders
+  };
+}
+
+/** Returns safe aggregate diagnostics for the external OWN cycle-count tab. */
+function getOwnSourceAudit() {
+  const spreadsheet = SpreadsheetApp.openById(B2C_SOURCE_SPREADSHEET_ID);
+  const sheet = spreadsheet.getSheetByName(OWN_SOURCE_SHEET_NAME);
+
+  if (!sheet) {
+    return {
+      connected: true,
+      spreadsheetName: spreadsheet.getName(),
+      sheetFound: false,
+      sheetName: OWN_SOURCE_SHEET_NAME
+    };
+  }
+
+  const lastRow = sheet.getLastRow();
+  const lastColumn = sheet.getLastColumn();
+  const headers = lastColumn > 0
+    ? sheet.getRange(1, 1, 1, lastColumn).getDisplayValues()[0]
+    : [];
+  const normalizedHeaders = headers.map(normalizeHeader_);
+  const indexOf = function (name) {
+    const index = normalizedHeaders.indexOf(normalizeHeader_(name));
+    return index >= 0 ? index : null;
+  };
+  const indexes = {
+    Date: indexOf('Date'),
+    Shelf: indexOf('Shelf'),
+    Phy: indexOf('Phy'),
+    Diff: indexOf('Diff'),
+    Facility: indexOf('Facility')
+  };
+  indexes.Sys = indexOf('Sys');
+  if (indexes.Sys === null) {
+    indexes.Sys = indexOf('Total');
+  }
+
+  const missingCoreHeaders = ['Date', 'Shelf', 'Phy', 'Sys'].filter(
+    function (header) {
+      return indexes[header] === null;
+    }
+  );
+  const dataRows = lastRow > 1 && lastColumn > 0
+    ? sheet.getRange(2, 1, lastRow - 1, lastColumn).getValues()
+    : [];
+  const rowsByDate = {};
+  let countedRowCount = 0;
+  let systemQuantity = 0;
+  let physicalQuantity = 0;
+  let difference = 0;
+  let inconsistentDifferenceRowCount = 0;
+
+  if (missingCoreHeaders.length === 0) {
+    dataRows.forEach(function (row) {
+      if (row.every(isBlank_)) {
+        return;
+      }
+
+      const date = normalizeDate_(row[indexes.Date], getTimeZone_());
+      const system = toNumber_(row[indexes.Sys]);
+      const physical = toNumber_(row[indexes.Phy]);
+      const rawDifference = b2cCell_(row, indexes.Diff);
+      const rowDifference = isBlank_(rawDifference)
+        ? physical - system
+        : toNumber_(rawDifference);
+      countedRowCount += 1;
+      systemQuantity += system;
+      physicalQuantity += physical;
+      difference += rowDifference;
+      if (Math.abs((physical - system) - rowDifference) > 0.000001) {
+        inconsistentDifferenceRowCount += 1;
+      }
+
+      const dateKey = date || 'Undated';
+      if (!rowsByDate[dateKey]) {
+        rowsByDate[dateKey] = {
+          rowCount: 0,
+          systemQuantity: 0,
+          physicalQuantity: 0,
+          difference: 0
+        };
+      }
+      rowsByDate[dateKey].rowCount += 1;
+      rowsByDate[dateKey].systemQuantity += system;
+      rowsByDate[dateKey].physicalQuantity += physical;
+      rowsByDate[dateKey].difference += rowDifference;
+    });
+  }
+
+  return {
+    connected: true,
+    spreadsheetName: spreadsheet.getName(),
+    sheetFound: true,
+    sheetName: sheet.getName(),
+    rowCount: Math.max(lastRow - 1, 0),
+    columnCount: lastColumn,
+    headers: headers,
+    mappedColumns: indexes,
+    mappingError: missingCoreHeaders.length > 0
+      ? 'Missing required columns: ' + missingCoreHeaders.join(', ')
+      : '',
+    countedRowCount: countedRowCount,
+    systemQuantity: round_(systemQuantity, 2),
+    physicalQuantity: round_(physicalQuantity, 2),
+    difference: round_(difference, 2),
+    inconsistentDifferenceRowCount: inconsistentDifferenceRowCount,
+    rowsByDate: rowsByDate
   };
 }
 
@@ -5016,6 +5165,7 @@ function getFacilitySourceAudit(optionalDate) {
       : facilityAuditSummary_(rows, nextEmailDate),
     sourceSummary: sourceSummary_(rows, []),
     b2cSource: getB2cSourceAudit(),
+    ownSource: getOwnSourceAudit(),
     emailReadiness: {
       enabled: config.emailEnabled,
       sendHour: config.emailSendHour,

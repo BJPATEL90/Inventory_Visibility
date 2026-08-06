@@ -30,7 +30,7 @@ required during normal operation.
 
 | Data | Google Sheet | Owner action |
 |---|---|---|
-| Current cycle counts | `SL_AMBIENT`, `SL_MH`, `SL_RX`, `OWN` in `Inventory_Dashboard`; `B2C` in `Bin wise cycle Count-Q2-JAS` | Enter or upload correctly dated inventory rows. `B2C` is the external parent tab for `SL_MM`, `SL_LJ`/`SLLJ`, and `SL_BW`; its `Total` column is treated as System Quantity. Do not change the required headers. |
+| Current cycle counts | `SL_AMBIENT`, `SL_MH`, `SL_RX`, `OWN` in `Inventory_Dashboard`; `B2C` in `Bin wise cycle Count-Q2-JAS` | Enter or upload correctly dated inventory rows. `B2C` is the external parent tab for `SL_MM`, `SL_LJ`/`SLLJ`, and `SL_BW`; its `Total` column is treated as System Quantity. Keep Facility, Date, Shelf, Total/Sys, and Phy; the other B2C columns are optional. |
 | Historical quarter | `Q1-AMJ26` | Maintain April–June 2026 history used for Last Quarter and past-date reporting. |
 | SKU classification | `SKU_MASTER` | Maintain each SKU and enter `A`, `B`, or `C` in `ABC Class`. |
 | Inventory cost | `COGS` | Maintain the SKU unit rate excluding GST. |

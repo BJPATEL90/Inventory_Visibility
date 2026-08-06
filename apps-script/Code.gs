@@ -156,7 +156,7 @@ const ACTIVITY_REASONS = [
 ];
 
 const DASHBOARD_CACHE_KEY =
-  'inventory_dashboard_v5_abc_breakdown_v1';
+  'inventory_dashboard_v6_external_b2c_v1';
 const LAST_REFRESH_PROPERTY = 'INVENTORY_LAST_REFRESH_TIME';
 const LAST_EMAIL_SENT_PROPERTY = 'INVENTORY_LAST_EMAIL_SENT_TIME';
 const REFRESH_HANDLER = 'refreshDashboardCache';
@@ -204,9 +204,11 @@ function doGet(e) {
       data = getCycleCoverage(parameters.month || '');
     } else if (action === 'b2csourceaudit') {
       data = getB2cSourceAudit();
+    } else if (action === 'facilitysourceaudit') {
+      data = getFacilitySourceAudit(parameters.date || '');
     } else {
       throw new Error(
-        'Unknown action. Use dashboard, transactions, transactionsCsv, facilityDashboard, binMaster, skuMaster, config, activityStatus, cycleCoverage, or b2cSourceAudit.'
+        'Unknown action. Use dashboard, transactions, transactionsCsv, facilityDashboard, binMaster, skuMaster, config, activityStatus, cycleCoverage, b2cSourceAudit, or facilitySourceAudit.'
       );
     }
 
@@ -516,9 +518,9 @@ function getCombinedData(
 /**
  * Reads the B2C parent tab from its separate cycle-count workbook.
  *
- * The operational B2C tab uses Total for System Quantity and does not contain
- * Rack or Remark. Shelf is retained as the bin identifier, so bin counting
- * still uses Facility + blank Rack + Shelf without changing source data.
+ * The operational B2C tab uses Total for System Quantity. Only Facility, Date,
+ * Shelf, Total/Sys, and Phy are mandatory; descriptive quantity columns are
+ * optional. Shelf is retained as the bin identifier when Rack is absent.
  */
 function readB2cCombinedRows_(costMap, abcClassMap, timeZone) {
   const spreadsheet = SpreadsheetApp.openById(B2C_SOURCE_SPREADSHEET_ID);
@@ -555,11 +557,11 @@ function readB2cCombinedRows_(costMap, abcClassMap, timeZone) {
 
     const physicalQuantity = toNumber_(row[indexes.Phy]);
     const systemQuantity = toNumber_(row[indexes.Sys]);
-    const rawDifference = row[indexes.Diff];
+    const rawDifference = b2cCell_(row, indexes.Diff);
     const difference = isBlank_(rawDifference)
       ? physicalQuantity - systemQuantity
       : toNumber_(rawDifference);
-    const skuCode = cleanText_(row[indexes['Sku Code']]);
+    const skuCode = cleanText_(b2cCell_(row, indexes['Sku Code']));
     const normalizedSku = normalizeSku_(skuCode);
     const costRecord = normalizedSku &&
       Object.prototype.hasOwnProperty.call(costMap, normalizedSku)
@@ -576,18 +578,18 @@ function readB2cCombinedRows_(costMap, abcClassMap, timeZone) {
       sourceSheet: B2C_SOURCE_SHEET_NAME,
       facility: facility,
       date: normalizeDate_(row[indexes.Date], timeZone),
-      rack: indexes.Rack === null
-        ? ''
-        : cleanText_(row[indexes.Rack]),
+      rack: cleanText_(b2cCell_(row, indexes.Rack)),
       skuCode: skuCode,
       abcClass: abcClass,
-      itemName: cleanText_(row[indexes['Item Name']]),
+      itemName: cleanText_(b2cCell_(row, indexes['Item Name'])),
       shelf: cleanText_(row[indexes.Shelf]),
-      batch: cleanText_(row[indexes.Batch]),
-      vendorBatchNumber: cleanText_(row[indexes['Vendor Batch Number']]),
-      pack: toNumber_(row[indexes.Pack]),
-      box: toNumber_(row[indexes.Box]),
-      loose: toNumber_(row[indexes.Loose]),
+      batch: cleanText_(b2cCell_(row, indexes.Batch)),
+      vendorBatchNumber: cleanText_(
+        b2cCell_(row, indexes['Vendor Batch Number'])
+      ),
+      pack: toNumber_(b2cCell_(row, indexes.Pack)),
+      box: toNumber_(b2cCell_(row, indexes.Box)),
+      loose: toNumber_(b2cCell_(row, indexes.Loose)),
       physicalQuantity: physicalQuantity,
       systemQuantity: systemQuantity,
       difference: difference,
@@ -603,9 +605,7 @@ function readB2cCombinedRows_(costMap, abcClassMap, timeZone) {
       differenceValue: unitCost === null
         ? null
         : round_(difference * unitCost, 2),
-      remark: indexes.Remark === null
-        ? ''
-        : cleanText_(row[indexes.Remark])
+      remark: cleanText_(b2cCell_(row, indexes.Remark))
     });
   }
 
@@ -2110,6 +2110,13 @@ function testCycleCoverageCalculations() {
     'Phy',
     'Diff.'
   ]);
+  const minimalB2cIndexes = b2cHeaderIndexes_([
+    'Facility',
+    'Date',
+    'Shelf',
+    'Total',
+    'Phy'
+  ]);
   const counts = coverageCountedQuantitiesByDate_([
     {
       date: '2026-08-01',
@@ -2172,6 +2179,8 @@ function testCycleCoverageCalculations() {
   assertEqual_(b2cIndexes.Sys, 7, 'B2C Total-to-System mapping');
   assertEqual_(b2cIndexes.Rack, null, 'B2C optional Rack mapping');
   assertEqual_(b2cIndexes.Remark, null, 'B2C optional Remark mapping');
+  assertEqual_(minimalB2cIndexes.Sys, 3, 'Minimal B2C System mapping');
+  assertEqual_(minimalB2cIndexes.Pack, null, 'B2C optional Pack mapping');
 
   const result = {
     passed: true,
@@ -2263,6 +2272,7 @@ function getB2cSourceAudit() {
 
   const rowsByEnteredFacility = {};
   const quantitySummaryByFacility = {};
+  let mappingError = '';
   const dataRows = lastRow > 1 && lastColumn > 0
     ? sheet.getRange(2, 1, lastRow - 1, lastColumn).getValues()
     : [];
@@ -2278,7 +2288,16 @@ function getB2cSourceAudit() {
   }
 
   if (headers.length > 0) {
-    const indexes = b2cHeaderIndexes_(headers);
+    let indexes;
+    try {
+      indexes = b2cHeaderIndexes_(headers);
+    } catch (error) {
+      mappingError = error && error.message
+        ? error.message
+        : 'Unable to map the external B2C columns.';
+    }
+
+    if (indexes) {
     dataRows.forEach(function (row) {
       if (row.every(isBlank_)) {
         return;
@@ -2308,7 +2327,10 @@ function getB2cSourceAudit() {
       const date = normalizeDate_(row[indexes.Date], getTimeZone_());
       const systemQuantity = toNumber_(row[indexes.Sys]);
       const physicalQuantity = toNumber_(row[indexes.Phy]);
-      const difference = toNumber_(row[indexes.Diff]);
+      const rawDifference = b2cCell_(row, indexes.Diff);
+      const difference = isBlank_(rawDifference)
+        ? physicalQuantity - systemQuantity
+        : toNumber_(rawDifference);
       summary.rowCount += 1;
       summary.systemQuantityFromTotal += systemQuantity;
       summary.physicalQuantity += physicalQuantity;
@@ -2325,6 +2347,7 @@ function getB2cSourceAudit() {
         summary.inconsistentDifferenceRowCount += 1;
       }
     });
+    }
   }
 
   const requiredHeaders = {};
@@ -2344,6 +2367,7 @@ function getB2cSourceAudit() {
     facilityColumnNumber: facilityIndex >= 0 ? facilityIndex + 1 : null,
     rowsByEnteredFacility: rowsByEnteredFacility,
     quantitySummaryByFacility: quantitySummaryByFacility,
+    mappingError: mappingError,
     requiredHeaders: requiredHeaders
   };
 }
@@ -4884,24 +4908,15 @@ function inventoryHeaderIndexes_(headerRow, sheetName) {
 
 /**
  * Maps the separate B2C workbook layout to the dashboard's logical columns.
- * Total is deliberately mapped to Sys; Rack and Remark are optional.
+ * Total is deliberately mapped to Sys; non-coverage columns are optional.
  */
 function b2cHeaderIndexes_(headerRow) {
   const normalizedHeaders = headerRow.map(normalizeHeader_);
   const indexes = {};
   const requiredHeaders = [
-    'Facility',
     'Date',
-    'Sku Code',
-    'Item Name',
     'Shelf',
-    'Batch',
-    'Vendor Batch Number',
-    'Pack',
-    'Box',
-    'Loose',
-    'Phy',
-    'Diff'
+    'Phy'
   ];
 
   requiredHeaders.forEach(function (header) {
@@ -4916,6 +4931,19 @@ function b2cHeaderIndexes_(headerRow) {
     indexes[header] = index;
   });
 
+  let facilityIndex = normalizedHeaders.indexOf(normalizeHeader_('Facility'));
+  if (facilityIndex < 0) {
+    facilityIndex = normalizedHeaders.indexOf(
+      normalizeHeader_('Facility Name')
+    );
+  }
+  if (facilityIndex < 0) {
+    throw new Error(
+      'External B2C sheet must contain Facility or Facility Name.'
+    );
+  }
+  indexes.Facility = facilityIndex;
+
   let systemIndex = normalizedHeaders.indexOf(normalizeHeader_('Sys'));
   if (systemIndex < 0) {
     systemIndex = normalizedHeaders.indexOf(normalizeHeader_('Total'));
@@ -4927,8 +4955,20 @@ function b2cHeaderIndexes_(headerRow) {
   }
   indexes.Sys = systemIndex;
 
-  const rackIndex = normalizedHeaders.indexOf(normalizeHeader_('Rack'));
-  indexes.Rack = rackIndex >= 0 ? rackIndex : null;
+  [
+    'Sku Code',
+    'Item Name',
+    'Batch',
+    'Vendor Batch Number',
+    'Pack',
+    'Box',
+    'Loose',
+    'Diff',
+    'Rack'
+  ].forEach(function (header) {
+    const index = normalizedHeaders.indexOf(normalizeHeader_(header));
+    indexes[header] = index >= 0 ? index : null;
+  });
 
   let remarkIndex = normalizedHeaders.indexOf(normalizeHeader_('Remark'));
   if (remarkIndex < 0) {
@@ -4937,6 +4977,172 @@ function b2cHeaderIndexes_(headerRow) {
   indexes.Remark = remarkIndex >= 0 ? remarkIndex : null;
 
   return indexes;
+}
+
+/**
+ * Audits every configured facility and the two dates relevant to email.
+ *
+ * This endpoint is read-only. It reports aggregate row/quantity totals and
+ * data-quality counts without returning SKU, item, batch, or shelf details.
+ */
+function getFacilitySourceAudit(optionalDate) {
+  const inventoryData = getAllInventoryData_();
+  const rows = inventoryData.currentRows;
+  const ranges = reportingRanges_();
+  const today = ranges.monthToDate.endDate;
+  const requestedDate = cleanText_(optionalDate) || today;
+
+  if (!parseIsoDate_(requestedDate)) {
+    throw new Error('Audit date must use yyyy-MM-dd.');
+  }
+
+  const config = getConfig();
+  const requestedDateAudit = facilityAuditSummary_(rows, requestedDate);
+  const currentEmailDate = ranges.yesterday.endDate;
+  const nextEmailDate = today;
+
+  return {
+    generatedAt: new Date().toISOString(),
+    requestedDate: requestedDate,
+    currentEmailReportDate: currentEmailDate,
+    nextEmailReportDate: nextEmailDate,
+    allCurrentRows: facilityAuditSummary_(rows, ''),
+    requestedDateRows: requestedDateAudit,
+    currentEmailRows: currentEmailDate === requestedDate
+      ? requestedDateAudit
+      : facilityAuditSummary_(rows, currentEmailDate),
+    nextEmailRows: nextEmailDate === requestedDate
+      ? requestedDateAudit
+      : facilityAuditSummary_(rows, nextEmailDate),
+    sourceSummary: sourceSummary_(rows, []),
+    b2cSource: getB2cSourceAudit(),
+    emailReadiness: {
+      enabled: config.emailEnabled,
+      sendHour: config.emailSendHour,
+      toConfigured: Boolean(config.emailTo),
+      ccConfigured: Boolean(config.emailCC),
+      bccConfigured: Boolean(config.emailBCC),
+      subject: config.emailSubject,
+      nextReportHasRows: facilityAuditSummary_(rows, nextEmailDate).rowCount > 0,
+      dataReadSucceeded: true,
+      note: 'The scheduled email reads source sheets again before rendering.'
+    }
+  };
+}
+
+/** Builds aggregate facility checks for all rows or one ISO date. */
+function facilityAuditSummary_(rows, optionalDate) {
+  const date = cleanText_(optionalDate);
+  const facilities = {};
+
+  COVERAGE_FACILITIES.forEach(function (facility) {
+    facilities[facility] = {
+      rowCount: 0,
+      datedRowCount: 0,
+      undatedRowCount: 0,
+      earliestDate: '',
+      latestDate: '',
+      sourceSheets: {},
+      uniqueSkus: {},
+      uniqueBins: {},
+      systemQuantity: 0,
+      physicalQuantity: 0,
+      netDifference: 0,
+      inconsistentDifferenceRowCount: 0
+    };
+  });
+
+  rows.forEach(function (row) {
+    if (date && row.date !== date) {
+      return;
+    }
+
+    const facility = cleanText_(row.facility);
+    if (!facilities[facility]) {
+      return;
+    }
+
+    const summary = facilities[facility];
+    const systemQuantity = toNumber_(row.systemQuantity);
+    const physicalQuantity = toNumber_(row.physicalQuantity);
+    const difference = toNumber_(row.difference);
+    const sourceSheet = cleanText_(row.sourceSheet) || facility;
+    const sku = normalizeSku_(row.skuCode);
+    const bin = binKey_(row);
+    summary.rowCount += 1;
+    summary.systemQuantity += systemQuantity;
+    summary.physicalQuantity += physicalQuantity;
+    summary.netDifference += difference;
+    summary.sourceSheets[sourceSheet] = true;
+    if (sku) {
+      summary.uniqueSkus[sku] = true;
+    }
+    if (bin) {
+      summary.uniqueBins[bin] = true;
+    }
+    if (row.date) {
+      summary.datedRowCount += 1;
+      if (!summary.earliestDate || row.date < summary.earliestDate) {
+        summary.earliestDate = row.date;
+      }
+      if (!summary.latestDate || row.date > summary.latestDate) {
+        summary.latestDate = row.date;
+      }
+    } else {
+      summary.undatedRowCount += 1;
+    }
+    if (
+      Math.abs((physicalQuantity - systemQuantity) - difference) > 0.000001
+    ) {
+      summary.inconsistentDifferenceRowCount += 1;
+    }
+  });
+
+  let rowCount = 0;
+  let systemQuantity = 0;
+  let physicalQuantity = 0;
+  let netDifference = 0;
+  let inconsistentDifferenceRowCount = 0;
+  const finishedFacilities = {};
+
+  COVERAGE_FACILITIES.forEach(function (facility) {
+    const summary = facilities[facility];
+    rowCount += summary.rowCount;
+    systemQuantity += summary.systemQuantity;
+    physicalQuantity += summary.physicalQuantity;
+    netDifference += summary.netDifference;
+    inconsistentDifferenceRowCount += summary.inconsistentDifferenceRowCount;
+    finishedFacilities[facility] = {
+      rowCount: summary.rowCount,
+      datedRowCount: summary.datedRowCount,
+      undatedRowCount: summary.undatedRowCount,
+      earliestDate: summary.earliestDate,
+      latestDate: summary.latestDate,
+      sourceSheets: Object.keys(summary.sourceSheets),
+      uniqueSkuCount: Object.keys(summary.uniqueSkus).length,
+      uniqueBinCount: Object.keys(summary.uniqueBins).length,
+      systemQuantity: round_(summary.systemQuantity, 2),
+      physicalQuantity: round_(summary.physicalQuantity, 2),
+      netDifference: round_(summary.netDifference, 2),
+      inconsistentDifferenceRowCount:
+        summary.inconsistentDifferenceRowCount
+    };
+  });
+
+  return {
+    date: date,
+    rowCount: rowCount,
+    systemQuantity: round_(systemQuantity, 2),
+    physicalQuantity: round_(physicalQuantity, 2),
+    netDifference: round_(netDifference, 2),
+    inconsistentDifferenceRowCount: inconsistentDifferenceRowCount,
+    facilities: finishedFacilities
+  };
+}
+
+/** Safely reads an optional B2C cell without treating null as column zero. */
+function b2cCell_(row, index) {
+  return index === null || index === undefined ? '' : row[index];
 }
 
 /** Resolves a reporting facility without exposing B2C as a facility. */

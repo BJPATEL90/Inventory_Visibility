@@ -82,7 +82,10 @@ or unsupported values are skipped and listed by
 
 The B2C layout uses `Total` as System Quantity, `Phy` as Physical Quantity,
 and `Diff.` as Difference. It does not need separate `Rack` or `Remark`
-columns; `Shelf` remains the unique bin identifier for B2C reporting.
+columns; `Shelf` remains the unique bin identifier for B2C reporting. Only
+`Facility`, `Date`, `Shelf`, `Total`/`Sys`, and `Phy` are mandatory. Missing
+`Pack`, `Box`, `Loose`, SKU-description, batch, and difference columns are
+treated as optional instead of rejecting the complete B2C source.
 
 This is separate from the daily inventory CSV. The CSV contains the facility
 names `SL MM`, `SLLJ`, and `SL BW`; it is not expected to contain a facility
@@ -333,7 +336,9 @@ Facility | Date | Sku Code | Item Name | Shelf | Batch | Vendor Batch number | T
 ```
 
 For B2C only, the backend maps `Total` to System Quantity and accepts only
-`SL_MM`, `SL_LJ`/`SLLJ`, and `SL_BW` from the Facility column.
+`SL_MM`, `SL_LJ`/`SLLJ`, and `SL_BW` from the Facility column. The full row
+shown above is supported, but only Facility, Date, Shelf, Total/Sys, and Phy
+are required.
 
 Header matching ignores case, extra spaces, and periods, so `Diff` and `Diff.`
 are both accepted.

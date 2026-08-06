@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import {
   AlertCircle,
   BarChart3,
+  BookOpenCheck,
   Boxes,
   CheckCircle2,
   ChevronDown,
@@ -36,6 +37,7 @@ import {
   CycleCoverageBanner,
   CycleCoveragePage
 } from './components/CycleCoveragePage';
+import { CalculationLogicPage } from './components/CalculationLogicPage';
 import { InventoryTable } from './components/InventoryTable';
 import { KpiCard } from './components/KpiCard';
 import {
@@ -68,7 +70,11 @@ const PERIOD_KEYS: PeriodKey[] = [
   'yesterday'
 ];
 
-type DashboardPage = 'kpi' | 'transactions' | 'facilityProgress';
+type DashboardPage =
+  | 'kpi'
+  | 'transactions'
+  | 'facilityProgress'
+  | 'calculationLogic';
 
 function useDebouncedValue<T>(value: T, delay: number) {
   const [debouncedValue, setDebouncedValue] = useState(value);
@@ -299,6 +305,12 @@ function SectionNavigation({
       label: 'Facility MTD Progress',
       description: 'Inventory and count coverage',
       icon: BarChart3
+    },
+    {
+      page: 'calculationLogic' as const,
+      label: 'Calculation Logic',
+      description: 'Formulas and publication flow',
+      icon: BookOpenCheck
     }
   ];
 
@@ -1522,6 +1534,10 @@ export default function App() {
                   void cycleCoverageQuery.refetch();
                 }}
               />
+            ) : null}
+
+            {activePage === 'calculationLogic' ? (
+              <CalculationLogicPage config={config} />
             ) : null}
 
             {SHOW_MASTERS ? (

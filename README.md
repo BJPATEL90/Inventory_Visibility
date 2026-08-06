@@ -33,7 +33,7 @@ commit `abbcbc5`, tag `v1-production-backup-2026-08-06`, and branch
 `codex/backup-v1-production-2026-08-06`. These references must not be deleted;
 they provide the rollback source if a production issue is found.
 
-V2 adds three separate frontend pages using a left navigation panel:
+V2 adds four separate frontend pages using a left navigation panel:
 
 1. **Executive KPI** - the landing page contains KPI cards only. Clicking a
    four-period accuracy card can still open its ABC detail.
@@ -41,6 +41,9 @@ V2 adds three separate frontend pages using a left navigation panel:
    sorting, pagination, and CSV download.
 3. **Facility MTD Progress** - facility cards, a 0%-100% progress bar, opening
    GOOD quantity, cumulative counted quantity, and a day-wise MTD table.
+4. **Calculation Logic** - read-only documentation of data sources, reporting
+   periods, KPI formulas, special NTF/COGS rules, coverage calculations,
+   colour thresholds, skipped rows, refreshes, emails, and CSV publication.
 
 The Inventory Transactions request is not started on the landing page. This
 allows the saved KPI snapshot to appear first and reduces initial page work.
@@ -169,7 +172,7 @@ Gmail. This removes only the V2 inventory-import trigger from that test project.
 
 ## Current dashboard behavior
 
-The current frontend contains three visible pages:
+The current frontend contains four visible pages:
 
 1. **Executive KPI**, including quantity coverage, four-period quantity and
    COGS accuracy, ABC Class details, and KPI cards.
@@ -178,6 +181,8 @@ The current frontend contains three visible pages:
 3. **Facility MTD Progress**, including facility coverage cards and the
    day-wise opening inventory, counted quantity, completion, and inventory
    movement table.
+4. **Calculation Logic**, including the formulas and publishing rules used by
+   the production Apps Script and React dashboard.
 
 The read-only Bin Master and SKU Master APIs are implemented, but **Section 3:
 Masters is intentionally hidden in the frontend for now**.
@@ -970,6 +975,8 @@ accuracy:
   Coverage.
 - [ ] Confirm there is no separate NTF KPI card.
 - [ ] Confirm NTF rows contribute as full shortages in Month-to-Date totals.
+- [ ] Open **Calculation Logic** and confirm the formulas, live Config values,
+  data sources, and publication flow are readable on desktop and mobile.
 - [ ] Confirm the Masters section is not visible.
 - [ ] Test transaction global search.
 - [ ] Test column sorting.

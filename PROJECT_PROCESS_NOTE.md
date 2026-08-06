@@ -59,12 +59,15 @@ and reduce Cost Coverage.
    search or sort the table, and download the selected rows as CSV.
 7. Users open **Facility MTD Progress** to review opening GOOD inventory,
    cumulative counted quantity, completion, and day-over-day inventory change.
-8. Before sending the daily email, Apps Script reads fresh Sheet data and
+8. Users open **Calculation Logic** when they need to verify a KPI formula,
+   source rule, exclusion, colour threshold, refresh, or publication process.
+9. Before sending the daily email, Apps Script reads fresh Sheet data and
    refreshes cycle coverage. It sends Yesterday's report with the Q2 coverage
    summary and attaches the quarter-to-date transaction CSV.
 
-If urgent data was entered after the latest refresh, run
-`refreshDashboardCache()` once from Apps Script and then refresh the dashboard.
+If urgent data was entered after the latest refresh, use the dashboard
+**Refresh** button. It requests a cloud recalculation before reloading the
+visible results.
 
 After the first successful visit, the browser keeps the last successful KPI
 snapshot. On later visits, the indicators appear immediately while fresh cloud

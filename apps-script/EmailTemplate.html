@@ -127,34 +127,6 @@
                 </td>
               </tr>
 
-              <tr>
-                <td style="padding:16px 26px 4px 26px;">
-                  <div style="color:#0f172a; font-size:16px; line-height:23px; font-weight:bold;">
-                    Facility Quantity Coverage
-                  </div>
-                  <div style="margin-top:3px; margin-bottom:10px; color:#64748b; font-size:12px; line-height:18px;">
-                    GOOD inventory only. Counted quantity is cumulative from the cycle start date.
-                  </div>
-                  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%; border:1px solid #e2e8f0; border-collapse:collapse;">
-                    <tr style="background-color:#eff6ff;">
-                      <td style="padding:9px 8px; border-bottom:1px solid #cbd5e1; color:#1e3a8a; font-size:10px; line-height:15px; font-weight:bold; text-transform:uppercase;">Facility</td>
-                      <td align="right" style="padding:9px 8px; border-bottom:1px solid #cbd5e1; color:#1e3a8a; font-size:10px; line-height:15px; font-weight:bold; text-transform:uppercase;">Opening GOOD</td>
-                      <td align="right" style="padding:9px 8px; border-bottom:1px solid #cbd5e1; color:#1e3a8a; font-size:10px; line-height:15px; font-weight:bold; text-transform:uppercase;">Counted</td>
-                      <td align="right" style="padding:9px 8px; border-bottom:1px solid #cbd5e1; color:#1e3a8a; font-size:10px; line-height:15px; font-weight:bold; text-transform:uppercase;">Coverage</td>
-                    </tr>
-                    <? for (var facilityIndex = 0; facilityIndex < coverage.facilities.length; facilityIndex += 1) {
-                      var facility = coverage.facilities[facilityIndex];
-                    ?>
-                      <tr>
-                        <td style="padding:9px 8px; border-bottom:1px solid #e2e8f0; color:#334155; font-size:11px; line-height:16px; font-weight:bold;"><?= facility.name ?></td>
-                        <td align="right" style="padding:9px 8px; border-bottom:1px solid #e2e8f0; color:#475569; font-size:11px; line-height:16px;"><?= facility.openingGoodQuantity ?></td>
-                        <td align="right" style="padding:9px 8px; border-bottom:1px solid #e2e8f0; color:#475569; font-size:11px; line-height:16px;"><?= facility.cumulativeCountedQuantity ?></td>
-                        <td align="right" style="padding:9px 8px; border-bottom:1px solid #e2e8f0; color:<?= facility.textColor ?>; font-size:11px; line-height:16px; font-weight:bold;"><?= facility.completionPercent ?></td>
-                      </tr>
-                    <? } ?>
-                  </table>
-                </td>
-              </tr>
             <? } ?>
 
             <tr>
@@ -298,6 +270,39 @@
                 <? } ?>
               </td>
             </tr>
+
+            <? if (report.cycleCoverage) {
+              var facilityCoverage = report.cycleCoverage;
+            ?>
+              <tr>
+                <td style="padding:8px 26px 4px 26px;">
+                  <div style="color:#0f172a; font-size:16px; line-height:23px; font-weight:bold;">
+                    Facility Quantity Coverage
+                  </div>
+                  <div style="margin-top:3px; margin-bottom:10px; color:#64748b; font-size:12px; line-height:18px;">
+                    GOOD inventory only. Counted quantity is cumulative from the cycle start date.
+                  </div>
+                  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%; border:1px solid #e2e8f0; border-collapse:collapse;">
+                    <tr style="background-color:#eff6ff;">
+                      <td style="padding:9px 8px; border-bottom:1px solid #cbd5e1; color:#1e3a8a; font-size:10px; line-height:15px; font-weight:bold; text-transform:uppercase;">Facility</td>
+                      <td align="right" style="padding:9px 8px; border-bottom:1px solid #cbd5e1; color:#1e3a8a; font-size:10px; line-height:15px; font-weight:bold; text-transform:uppercase;">Opening GOOD</td>
+                      <td align="right" style="padding:9px 8px; border-bottom:1px solid #cbd5e1; color:#1e3a8a; font-size:10px; line-height:15px; font-weight:bold; text-transform:uppercase;">Counted</td>
+                      <td align="right" style="padding:9px 8px; border-bottom:1px solid #cbd5e1; color:#1e3a8a; font-size:10px; line-height:15px; font-weight:bold; text-transform:uppercase;">Coverage</td>
+                    </tr>
+                    <? for (var facilityIndex = 0; facilityIndex < facilityCoverage.facilities.length; facilityIndex += 1) {
+                      var facility = facilityCoverage.facilities[facilityIndex];
+                    ?>
+                      <tr>
+                        <td style="padding:9px 8px; border-bottom:1px solid #e2e8f0; color:#334155; font-size:11px; line-height:16px; font-weight:bold;"><?= facility.name ?></td>
+                        <td align="right" style="padding:9px 8px; border-bottom:1px solid #e2e8f0; color:#475569; font-size:11px; line-height:16px;"><?= facility.openingGoodQuantity ?></td>
+                        <td align="right" style="padding:9px 8px; border-bottom:1px solid #e2e8f0; color:#475569; font-size:11px; line-height:16px;"><?= facility.cumulativeCountedQuantity ?></td>
+                        <td align="right" style="padding:9px 8px; border-bottom:1px solid #e2e8f0; color:<?= facility.textColor ?>; font-size:11px; line-height:16px; font-weight:bold;"><?= facility.completionPercent ?></td>
+                      </tr>
+                    <? } ?>
+                  </table>
+                </td>
+              </tr>
+            <? } ?>
 
             <? if (report.quarterAttachment) { ?>
               <tr>

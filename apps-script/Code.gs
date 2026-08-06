@@ -2088,8 +2088,19 @@ function testEmailPreview() {
     endDate: formatEmailDate_(quarterCsv.endDate)
   };
   const html = renderEmailTemplate_(report);
+  const coverageBannerRendered = Boolean(
+    report.cycleCoverage &&
+      html.indexOf('Overall Quantity Coverage') >= 0 &&
+      html.indexOf('Opening GOOD Qty') >= 0 &&
+      html.indexOf('Cumulative Counted') >= 0 &&
+      html.indexOf('Counted Today') >= 0 &&
+      html.indexOf('Inventory Change vs Previous Day') >= 0
+  );
+  const coverageProgressBarRendered = Boolean(
+    report.cycleCoverage && html.indexOf('background-color:#22d3ee') >= 0
+  );
   const result = {
-    passed: true,
+    passed: coverageBannerRendered && coverageProgressBarRendered,
     sent: false,
     reportDate: period.endDate,
     hasActivity: report.hasActivity,
@@ -2099,6 +2110,8 @@ function testEmailPreview() {
     valuePeriodSummaryCount: report.valuePeriodSummary.length,
     valuePeriodSummary: report.valuePeriodSummary,
     cycleCoverage: report.cycleCoverage,
+    coverageBannerRendered: coverageBannerRendered,
+    coverageProgressBarRendered: coverageProgressBarRendered,
     metricCount: report.metrics.length,
     negativeNumberExample: formatEmailNumber_(-6307),
     negativeValueExample: formatEmailCurrency_(-225811.56),
@@ -5500,8 +5513,7 @@ function buildEmailCoverage_(config, cycleCoverage) {
   };
 
   return {
-    title: fiscalQuarterLabel_(cycleCoverage.cycleStartDate) +
-      ' Overall Quantity Coverage',
+    title: 'Overall Quantity Coverage',
     asOfDate: formatEmailDate_(latest.date),
     dateRange:
       formatEmailDate_(cycleCoverage.cycleStartDate) +

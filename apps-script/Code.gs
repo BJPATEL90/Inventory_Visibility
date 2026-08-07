@@ -160,8 +160,10 @@ const DASHBOARD_CACHE_KEY =
   'inventory_dashboard_v7_external_own_v1';
 const LAST_REFRESH_PROPERTY = 'INVENTORY_LAST_REFRESH_TIME';
 const LAST_EMAIL_SENT_PROPERTY = 'INVENTORY_LAST_EMAIL_SENT_TIME';
+const LAST_EMAIL_REPORT_DATE_PROPERTY = 'INVENTORY_LAST_EMAIL_REPORT_DATE';
 const REFRESH_HANDLER = 'refreshDashboardCache';
 const EMAIL_HANDLER = 'sendInventoryEmail';
+const EMAIL_SEND_MINUTE = 10;
 const MAX_EMAIL_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 
 let TIME_ZONE_CACHE = '';
@@ -1938,8 +1940,9 @@ function createRefreshTrigger() {
 /**
  * Creates or replaces the daily email trigger.
  *
- * Apps Script runs an atHour() trigger during that hour rather than at an
- * exact minute. For example, hour 9 means the trigger runs between 9:00-10:00.
+ * The configured hour is combined with nearMinute(10). Google may vary a
+ * nearMinute trigger by about 15 minutes, so hour 11 normally runs between
+ * approximately 10:55-11:25 IST and remains before the 11:30 requirement.
  */
 function createDailyEmailTrigger() {
   const config = getConfig();
@@ -1955,6 +1958,7 @@ function createDailyEmailTrigger() {
     .newTrigger(EMAIL_HANDLER)
     .timeBased()
     .atHour(sendHour)
+    .nearMinute(EMAIL_SEND_MINUTE)
     .everyDays(1)
     .inTimezone(getTimeZone_())
     .create();
@@ -1962,6 +1966,10 @@ function createDailyEmailTrigger() {
   return {
     handler: EMAIL_HANDLER,
     sendHour: sendHour,
+    nearMinute: EMAIL_SEND_MINUTE,
+    expectedWindow: 'Approximately ' +
+      String(sendHour).padStart(2, '0') + ':00-' +
+      String(sendHour).padStart(2, '0') + ':25',
     timeZone: getTimeZone_(),
     triggerId: trigger.getUniqueId()
   };
@@ -1975,6 +1983,24 @@ function createDailyEmailTrigger() {
  * and therefore continues to work while the user's laptop is switched off.
  */
 function sendInventoryEmail() {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(1000)) {
+    return {
+      sent: false,
+      skipped: true,
+      message: 'Another inventory email execution is already running.'
+    };
+  }
+
+  try {
+    return sendInventoryEmail_();
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** Builds and sends one report, while preventing duplicate report dates. */
+function sendInventoryEmail_() {
   const config = getConfig();
 
   if (!config.emailEnabled) {
@@ -1998,6 +2024,22 @@ function sendInventoryEmail() {
   refreshCycleCoverageSystemSafely_(inventoryData.currentRows);
   const cycleCoverage = getCycleCoverage('');
   const period = dashboard.periods.yesterday;
+  const scriptProperties = PropertiesService.getScriptProperties();
+  const lastReportDate = scriptProperties.getProperty(
+    LAST_EMAIL_REPORT_DATE_PROPERTY
+  );
+
+  if (lastReportDate === period.endDate) {
+    const duplicateResult = {
+      sent: false,
+      skipped: true,
+      reportDate: period.endDate,
+      message: 'This report date was already emailed.'
+    };
+    console.log(JSON.stringify(duplicateResult, null, 2));
+    return duplicateResult;
+  }
+
   const quarterCsv = buildQuarterCsvAttachment_(
     inventoryData.allRows,
     period.endDate
@@ -2035,10 +2077,10 @@ function sendInventoryEmail() {
   MailApp.sendEmail(mailOptions);
 
   const sentTime = new Date().toISOString();
-  PropertiesService.getScriptProperties().setProperty(
-    LAST_EMAIL_SENT_PROPERTY,
-    sentTime
-  );
+  scriptProperties.setProperties({
+    [LAST_EMAIL_SENT_PROPERTY]: sentTime,
+    [LAST_EMAIL_REPORT_DATE_PROPERTY]: period.endDate
+  });
 
   const result = {
     sent: true,

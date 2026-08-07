@@ -452,7 +452,7 @@ Required settings:
 | Email CC | | Optional CC |
 | Email BCC | | Optional BCC |
 | Email Subject | Daily Inventory Health Report | Email subject prefix |
-| Email Send Hour | 9 | Hour from 0 to 23 |
+| Email Send Hour | 11 | Hour from 0 to 23 |
 | Dashboard URL | https://bjpatel90.github.io/Inventory_Visibility/ | Email link |
 | Theme | Light | Default `Light` or `Dark` |
 
@@ -460,8 +460,11 @@ Important:
 
 - `Auto Refresh Minutes` must be `1`, `5`, `10`, `15`, `30`, or `60`.
 - The script time zone is `Asia/Kolkata`.
-- Hour `9` means Apps Script runs the email trigger sometime between 9:00 and
-  10:00, not necessarily at exactly 9:00.
+- The daily trigger targets minute `10` of the configured hour. Google may vary
+  that time by about 15 minutes. Hour `11` therefore normally sends between
+  approximately 11:00 and 11:25 IST, before 11:30.
+- The script records the last emailed report date. If another trigger starts for
+  the same report date, it exits without sending a duplicate.
 - After changing the refresh interval, run `createRefreshTrigger()` again.
 - After changing the email hour, run `createDailyEmailTrigger()` again.
 - The frontend also reads Auto Refresh Minutes and uses it as its API refetch

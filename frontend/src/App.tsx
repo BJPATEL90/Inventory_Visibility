@@ -232,19 +232,29 @@ function DashboardHeader({
 
 function LoadingState() {
   return (
-    <div className="flex min-h-[55vh] items-center justify-center px-4">
-      <div className="text-center">
-        <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300">
-          <RefreshCw aria-hidden="true" className="h-6 w-6 animate-spin" />
+    <main
+      role="status"
+      aria-live="polite"
+      aria-label="Loading inventory dashboard"
+      className="flex min-h-screen items-center justify-center bg-slate-50 px-6 text-slate-950 dark:bg-slate-950 dark:text-white"
+    >
+      <div className="w-full max-w-xs text-center">
+        <span className="mx-auto flex h-[70px] w-[70px] items-center justify-center rounded-[20px] bg-gradient-to-br from-blue-950 to-blue-700 text-xl font-black tracking-tight text-white shadow-[0_18px_40px_-18px_rgba(30,64,175,0.8)]">
+          IV
         </span>
-        <h2 className="mt-5 text-lg font-semibold text-slate-900 dark:text-white">
-          Loading inventory dashboard
-        </h2>
+
+        <div className="mx-auto mt-7 h-1.5 w-56 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
+          <span className="dashboard-loading-progress block h-full rounded-full bg-gradient-to-r from-blue-700 via-blue-600 to-cyan-500" />
+        </div>
+
+        <h1 className="mt-6 text-xl font-extrabold tracking-tight">
+          Loading Inventory Dashboard
+        </h1>
         <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-          Reading the latest data from Google Sheets.
+          Preparing KPI, facility and cycle-count metrics...
         </p>
       </div>
-    </div>
+    </main>
   );
 }
 
@@ -1266,6 +1276,10 @@ export default function App() {
       : period.zeroActivity.message;
   }
 
+  if (isLoading) {
+    return <LoadingState />;
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
       <DashboardHeader
@@ -1280,9 +1294,7 @@ export default function App() {
         }}
       />
 
-      {isLoading ? (
-        <LoadingState />
-      ) : error ? (
+      {error ? (
         <ErrorState
           message={
             error instanceof Error

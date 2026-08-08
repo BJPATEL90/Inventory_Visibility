@@ -52,3 +52,31 @@ button:disabled {
   color: #172554;
   background: #bfdbfe;
 }
+
+@keyframes dashboard-loading-progress {
+  0% {
+    transform: translateX(-125%);
+  }
+
+  55% {
+    transform: translateX(95%);
+  }
+
+  100% {
+    transform: translateX(240%);
+  }
+}
+
+.dashboard-loading-progress {
+  width: 44%;
+  animation: dashboard-loading-progress 1.55s ease-in-out infinite;
+  will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dashboard-loading-progress {
+    width: 68%;
+    animation: none;
+    will-change: auto;
+  }
+}

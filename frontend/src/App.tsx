@@ -1,5 +1,5 @@
-import { useEffect, useState, type ReactNode } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertCircle,
   BarChart3,
@@ -10,15 +10,18 @@ import {
   ClipboardCheck,
   Database,
   Gauge,
+  LogOut,
   Moon,
   PackageCheck,
   RefreshCw,
   Scale,
+  ShieldCheck,
   Sun,
   Target,
   Warehouse
 } from 'lucide-react';
 import {
+  clearCachedDashboardData,
   downloadTransactionsCsv,
   getActivityStatus,
   getBinMaster,
@@ -75,6 +78,184 @@ type DashboardPage =
   | 'transactions'
   | 'facilityProgress'
   | 'calculationLogic';
+
+interface DashboardUser {
+  name: string;
+  email: string;
+  picture: string;
+  expiresAt: number;
+}
+
+interface GoogleCredentialResponse {
+  credential: string;
+}
+
+interface GoogleIdentityApi {
+  initialize: (options: {
+    client_id: string;
+    callback: (response: GoogleCredentialResponse) => void;
+    auto_select?: boolean;
+    cancel_on_tap_outside?: boolean;
+    hd?: string;
+  }) => void;
+  renderButton: (
+    parent: HTMLElement,
+    options: Record<string, string | number | boolean>
+  ) => void;
+  disableAutoSelect: () => void;
+}
+
+declare global {
+  interface Window {
+    google?: {
+      accounts: {
+        id: GoogleIdentityApi;
+      };
+    };
+  }
+}
+
+const GOOGLE_CLIENT_ID = String(
+  import.meta.env.VITE_GOOGLE_CLIENT_ID || ''
+).trim();
+const GOOGLE_ALLOWED_DOMAIN = String(
+  import.meta.env.VITE_GOOGLE_ALLOWED_DOMAIN || ''
+)
+  .trim()
+  .toLowerCase();
+const GOOGLE_SESSION_KEY = 'inventory-google-session-v1';
+
+function decodeGoogleCredential(credential: string): DashboardUser {
+  const sections = credential.split('.');
+  if (sections.length !== 3) {
+    throw new Error('Google returned an invalid sign-in response.');
+  }
+
+  const encodedPayload = sections[1]
+    .replace(/-/g, '+')
+    .replace(/_/g, '/');
+  const paddedPayload = encodedPayload.padEnd(
+    Math.ceil(encodedPayload.length / 4) * 4,
+    '='
+  );
+  const payloadBytes = Uint8Array.from(
+    window.atob(paddedPayload),
+    (character) => character.charCodeAt(0)
+  );
+  const claims = JSON.parse(
+    new TextDecoder().decode(payloadBytes)
+  ) as {
+    aud?: string;
+    email?: string;
+    email_verified?: boolean;
+    exp?: number;
+    hd?: string;
+    name?: string;
+    picture?: string;
+  };
+  const email = String(claims.email || '').trim().toLowerCase();
+  const emailDomain = email.split('@')[1] || '';
+
+  if (claims.aud !== GOOGLE_CLIENT_ID || !claims.email_verified || !email) {
+    throw new Error('Google could not verify this account. Please try again.');
+  }
+
+  if (
+    GOOGLE_ALLOWED_DOMAIN &&
+    String(claims.hd || emailDomain).toLowerCase() !== GOOGLE_ALLOWED_DOMAIN
+  ) {
+    throw new Error(
+      `Please sign in with your ${GOOGLE_ALLOWED_DOMAIN} Google account.`
+    );
+  }
+
+  const expiresAt = Number(claims.exp || 0) * 1000;
+  if (!expiresAt || expiresAt <= Date.now()) {
+    throw new Error('The Google sign-in response has expired. Please try again.');
+  }
+
+  return {
+    name: String(claims.name || email.split('@')[0]),
+    email,
+    picture: String(claims.picture || ''),
+    expiresAt
+  };
+}
+
+function getStoredGoogleUser() {
+  try {
+    const stored = window.sessionStorage.getItem(GOOGLE_SESSION_KEY);
+    if (!stored) {
+      return null;
+    }
+
+    const user = JSON.parse(stored) as DashboardUser;
+    if (!user.email || user.expiresAt <= Date.now()) {
+      window.sessionStorage.removeItem(GOOGLE_SESSION_KEY);
+      return null;
+    }
+
+    return user;
+  } catch {
+    return null;
+  }
+}
+
+function storeGoogleUser(user: DashboardUser) {
+  try {
+    window.sessionStorage.setItem(GOOGLE_SESSION_KEY, JSON.stringify(user));
+  } catch {
+    // Private-browser storage restrictions must not block the current session.
+  }
+}
+
+function clearGoogleUser() {
+  try {
+    window.sessionStorage.removeItem(GOOGLE_SESSION_KEY);
+  } catch {
+    // The in-memory session is still cleared by React state.
+  }
+}
+
+function userInitials(user: DashboardUser) {
+  return user.name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((word) => word.charAt(0).toUpperCase())
+    .join('') || 'GU';
+}
+
+function loadGoogleIdentity() {
+  if (window.google?.accounts.id) {
+    return Promise.resolve();
+  }
+
+  return new Promise<void>((resolve, reject) => {
+    const existingScript = document.getElementById(
+      'google-identity-services'
+    ) as HTMLScriptElement | null;
+
+    if (existingScript) {
+      existingScript.addEventListener('load', () => resolve(), { once: true });
+      existingScript.addEventListener(
+        'error',
+        () => reject(new Error('Google sign-in could not be loaded.')),
+        { once: true }
+      );
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.id = 'google-identity-services';
+    script.src = 'https://accounts.google.com/gsi/client';
+    script.async = true;
+    script.defer = true;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error('Google sign-in could not be loaded.'));
+    document.head.appendChild(script);
+  });
+}
 
 function useDebouncedValue<T>(value: T, delay: number) {
   const [debouncedValue, setDebouncedValue] = useState(value);
@@ -161,20 +342,155 @@ function accuracyTone(name: string) {
   return 'red' as const;
 }
 
+function SignInScreen({
+  onSignIn
+}: {
+  onSignIn: (user: DashboardUser) => void;
+}) {
+  const buttonContainer = useRef<HTMLDivElement>(null);
+  const [isPreparing, setIsPreparing] = useState(true);
+  const [signInError, setSignInError] = useState('');
+
+  useEffect(() => {
+    let isActive = true;
+
+    async function prepareGoogleSignIn() {
+      if (!GOOGLE_CLIENT_ID) {
+        setSignInError('Google sign-in has not been configured.');
+        setIsPreparing(false);
+        return;
+      }
+
+      try {
+        await loadGoogleIdentity();
+        if (!isActive || !window.google?.accounts.id || !buttonContainer.current) {
+          return;
+        }
+
+        window.google.accounts.id.initialize({
+          client_id: GOOGLE_CLIENT_ID,
+          callback: (response) => {
+            try {
+              const user = decodeGoogleCredential(response.credential);
+              storeGoogleUser(user);
+              setSignInError('');
+              onSignIn(user);
+            } catch (error) {
+              setSignInError(
+                error instanceof Error
+                  ? error.message
+                  : 'Google sign-in could not be completed.'
+              );
+            }
+          },
+          auto_select: false,
+          cancel_on_tap_outside: false,
+          ...(GOOGLE_ALLOWED_DOMAIN ? { hd: GOOGLE_ALLOWED_DOMAIN } : {})
+        });
+
+        buttonContainer.current.replaceChildren();
+        window.google.accounts.id.renderButton(buttonContainer.current, {
+          type: 'standard',
+          theme: 'outline',
+          size: 'large',
+          text: 'signin_with',
+          shape: 'rectangular',
+          logo_alignment: 'left',
+          width: Math.max(
+            200,
+            Math.min(300, buttonContainer.current.clientWidth)
+          )
+        });
+      } catch (error) {
+        if (isActive) {
+          setSignInError(
+            error instanceof Error
+              ? error.message
+              : 'Google sign-in could not be loaded.'
+          );
+        }
+      } finally {
+        if (isActive) {
+          setIsPreparing(false);
+        }
+      }
+    }
+
+    prepareGoogleSignIn();
+    return () => {
+      isActive = false;
+    };
+  }, [onSignIn]);
+
+  return (
+    <main className="flex min-h-screen items-center justify-center bg-slate-50 px-5 py-10 text-slate-950 dark:bg-slate-950 dark:text-white">
+      <section className="w-full max-w-md overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-xl shadow-blue-950/10 dark:border-slate-800 dark:bg-slate-900">
+        <div className="bg-gradient-to-br from-blue-950 via-blue-900 to-blue-700 px-7 py-8 text-white">
+          <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/10 ring-1 ring-white/20">
+            <ShieldCheck aria-hidden="true" className="h-6 w-6" />
+          </span>
+          <p className="mt-6 text-xs font-semibold uppercase tracking-[0.18em] text-blue-200">
+            Inventory visibility
+          </p>
+          <h1 className="mt-1 text-2xl font-extrabold tracking-tight">
+            Inventory Health Dashboard
+          </h1>
+          <p className="mt-2 text-sm leading-6 text-blue-100">
+            Sign in with your company Google account to open the dashboard.
+          </p>
+        </div>
+
+        <div className="px-7 py-7">
+          <h2 className="text-lg font-bold">Continue securely</h2>
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+            Use your {GOOGLE_ALLOWED_DOMAIN || 'authorized'} Google account.
+          </p>
+
+          <div className="mt-6 flex min-h-11 justify-center" ref={buttonContainer} />
+
+          {isPreparing ? (
+            <p className="mt-4 text-center text-sm text-slate-500 dark:text-slate-400">
+              Preparing Google sign-in...
+            </p>
+          ) : null}
+
+          {signInError ? (
+            <p
+              role="alert"
+              className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200"
+            >
+              {signInError}
+            </p>
+          ) : null}
+
+          <p className="mt-6 text-center text-xs leading-5 text-slate-400">
+            Signing out closes only this dashboard session. Your Gmail and other
+            Google services remain signed in.
+          </p>
+        </div>
+      </section>
+    </main>
+  );
+}
+
 function DashboardHeader({
   title,
   lastRefreshTime,
   isRefreshing,
   darkMode,
+  user,
   onRefresh,
-  onToggleTheme
+  onToggleTheme,
+  onLogout
 }: {
   title: string;
   lastRefreshTime?: string;
   isRefreshing: boolean;
   darkMode: boolean;
+  user: DashboardUser;
   onRefresh: () => void;
   onToggleTheme: () => void;
+  onLogout: () => void;
 }) {
   return (
     <header className="border-b border-blue-800 bg-gradient-to-r from-blue-950 via-blue-900 to-blue-800 text-white">
@@ -194,6 +510,37 @@ function DashboardHeader({
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
+          <div className="flex min-w-0 items-center gap-2.5 rounded-xl bg-white/10 px-2.5 py-2 ring-1 ring-white/15">
+            {user.picture ? (
+              <img
+                src={user.picture}
+                alt=""
+                referrerPolicy="no-referrer"
+                className="h-9 w-9 shrink-0 rounded-full bg-white object-cover"
+              />
+            ) : (
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-xs font-black text-blue-900">
+                {userInitials(user)}
+              </span>
+            )}
+            <span className="min-w-0 max-w-44">
+              <span className="block truncate text-sm font-bold text-white">
+                {user.name}
+              </span>
+              <span className="block truncate text-[11px] text-blue-200">
+                {user.email}
+              </span>
+            </span>
+            <button
+              type="button"
+              onClick={onLogout}
+              className="ml-1 flex h-8 items-center gap-1.5 rounded-lg px-2 text-xs font-semibold text-blue-100 transition hover:bg-white/15 hover:text-white focus:outline-none focus:ring-2 focus:ring-white/60"
+            >
+              <LogOut aria-hidden="true" className="h-4 w-4" />
+              Logout
+            </button>
+          </div>
+
           <div className="rounded-lg bg-white/10 px-3 py-1.5 ring-1 ring-white/15">
             <p className="text-xs text-blue-200">Last refresh</p>
             <p className="mt-0.5 text-sm font-semibold">
@@ -930,6 +1277,10 @@ function KpiGrid({ kpis }: { kpis: Kpis }) {
 }
 
 export default function App() {
+  const queryClient = useQueryClient();
+  const [signedInUser, setSignedInUser] = useState<DashboardUser | null>(
+    getStoredGoogleUser
+  );
   const [activePage, setActivePage] = useState<DashboardPage>('kpi');
   const [coverageMonth, setCoverageMonth] = useState('');
   const [filters, setFilters] =
@@ -957,6 +1308,7 @@ export default function App() {
     queryKey: ['config'],
     queryFn: getConfig,
     initialData: getCachedConfig,
+    enabled: Boolean(signedInUser),
     staleTime: 5 * 60 * 1000,
     retry: 2,
     retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 5000)
@@ -969,6 +1321,7 @@ export default function App() {
     queryKey: ['dashboard'],
     queryFn: getDashboard,
     initialData: getCachedDashboard,
+    enabled: Boolean(signedInUser),
     refetchInterval: refreshInterval,
     retry: 2,
     retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 5000)
@@ -1005,6 +1358,7 @@ export default function App() {
     ],
     queryFn: () => getTransactions(transactionParameters),
     enabled:
+      Boolean(signedInUser) &&
       activePage === 'transactions' &&
       Boolean(transactionStartDate && transactionEndDate),
     refetchInterval: refreshInterval,
@@ -1015,7 +1369,7 @@ export default function App() {
   const binMasterQuery = useQuery({
     queryKey: ['binMaster'],
     queryFn: getBinMaster,
-    enabled: SHOW_MASTERS,
+    enabled: Boolean(signedInUser) && SHOW_MASTERS,
     refetchInterval: refreshInterval,
     retry: 1
   });
@@ -1023,7 +1377,7 @@ export default function App() {
   const skuMasterQuery = useQuery({
     queryKey: ['skuMaster'],
     queryFn: getSkuMaster,
-    enabled: SHOW_MASTERS,
+    enabled: Boolean(signedInUser) && SHOW_MASTERS,
     refetchInterval: refreshInterval,
     retry: 1
   });
@@ -1033,7 +1387,8 @@ export default function App() {
     queryFn: () => getCycleCoverage(coverageMonth),
     initialData: coverageMonth ? undefined : getCachedCycleCoverage,
     enabled:
-      activePage === 'kpi' || activePage === 'facilityProgress',
+      Boolean(signedInUser) &&
+      (activePage === 'kpi' || activePage === 'facilityProgress'),
     refetchInterval: refreshInterval,
     retry: 1
   });
@@ -1069,6 +1424,7 @@ export default function App() {
     queryKey: ['activityStatus', filters.date],
     queryFn: () => getActivityStatus(filters.date),
     enabled:
+      Boolean(signedInUser) &&
       activePage === 'transactions' &&
       Boolean(filters.date) &&
       !transactionsQuery.isLoading &&
@@ -1109,6 +1465,28 @@ export default function App() {
 
     return () => window.cancelAnimationFrame(animationFrame);
   }, [selectedAbcPeriod]);
+
+  useEffect(() => {
+    if (!signedInUser) {
+      return;
+    }
+
+    const remainingSessionTime = signedInUser.expiresAt - Date.now();
+    if (remainingSessionTime <= 0) {
+      clearGoogleUser();
+      setSignedInUser(null);
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      clearGoogleUser();
+      clearCachedDashboardData();
+      queryClient.clear();
+      setSignedInUser(null);
+    }, remainingSessionTime);
+
+    return () => window.clearTimeout(timer);
+  }, [queryClient, signedInUser]);
 
   const isLoading =
     (!dashboard && dashboardQuery.isLoading) ||
@@ -1161,6 +1539,15 @@ export default function App() {
 
     await Promise.allSettled(requests);
     setIsManualRefreshing(false);
+  }
+
+  function logout() {
+    window.google?.accounts.id.disableAutoSelect();
+    clearGoogleUser();
+    clearCachedDashboardData();
+    queryClient.clear();
+    setActivePage('kpi');
+    setSignedInUser(null);
   }
 
   function updateFilter(
@@ -1276,6 +1663,10 @@ export default function App() {
       : period.zeroActivity.message;
   }
 
+  if (!signedInUser) {
+    return <SignInScreen onSignIn={setSignedInUser} />;
+  }
+
   if (isLoading) {
     return <LoadingState />;
   }
@@ -1287,11 +1678,13 @@ export default function App() {
         lastRefreshTime={lastRefreshTime}
         isRefreshing={isRefreshing}
         darkMode={darkMode}
+        user={signedInUser}
         onRefresh={retryAll}
         onToggleTheme={() => {
           setThemeInitialized(true);
           setDarkMode((current) => !current);
         }}
+        onLogout={logout}
       />
 
       {error ? (

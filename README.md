@@ -636,6 +636,13 @@ That means anyone who obtains the Web App URL can read the data exposed by its
 GET endpoints. The Web App URL and the GitHub Actions secret are not a secure
 login system because Vite places the URL inside the published browser files.
 
+The frontend uses Google Identity Services to show a company-account sign-in
+screen. After sign-in, the header displays the person's Google name, email, and
+profile photo or initials. **Logout** clears only the dashboard session and its
+saved browser data; it does not sign the person out of Gmail or other Google
+services. This frontend sign-in improves normal access control and usability,
+but it does not make an Apps Script endpoint deployed as **Anyone** private.
+
 If the inventory data must be limited to named users or a Google Workspace
 domain, do not publish this version as a public Web App. Add proper
 authentication in a later security phase.
@@ -713,9 +720,21 @@ Open `frontend/.env.local` and set:
 
 ```text
 VITE_APPS_SCRIPT_URL=https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec
+VITE_GOOGLE_CLIENT_ID=YOUR_GOOGLE_OAUTH_CLIENT_ID.apps.googleusercontent.com
+VITE_GOOGLE_ALLOWED_DOMAIN=mosaicwellness.in
 ```
 
 Do not add quotation marks. Do not commit `.env.local`.
+
+The OAuth client must include these **Authorized JavaScript origins** in Google
+Cloud Console:
+
+```text
+https://bjpatel90.github.io
+http://localhost:5173
+```
+
+If local testing uses `http://127.0.0.1:5173`, add that exact origin too.
 
 ## 3. Run locally
 
@@ -764,12 +783,22 @@ VITE_APPS_SCRIPT_URL
 The workflow deliberately fails at **Check Apps Script URL** if this secret is
 missing.
 
-## 2. Enable GitHub Pages
+## 2. Google sign-in configuration
+
+The public Google OAuth Web Client ID is included in
+`.github/workflows/deploy-pages.yml`. It is browser configuration, not a
+password or secret. The workflow also restricts the sign-in screen to
+`mosaicwellness.in` accounts.
+
+If the OAuth client is replaced later, update `VITE_GOOGLE_CLIENT_ID` in both
+workflow steps and in the local `frontend/.env.local` file.
+
+## 3. Enable GitHub Pages
 
 1. Open **Settings > Pages**.
 2. Under **Build and deployment**, set **Source** to **GitHub Actions**.
 
-## 3. Deploy
+## 4. Deploy
 
 Every push to `main` starts
 [.github/workflows/deploy-pages.yml](.github/workflows/deploy-pages.yml).
@@ -778,7 +807,7 @@ The workflow:
 
 1. Downloads the repository.
 2. Uses Node.js 22.
-3. Checks `VITE_APPS_SCRIPT_URL`.
+3. Checks `VITE_APPS_SCRIPT_URL` and the public Google OAuth client ID.
 4. Runs `npm ci` in `frontend`.
 5. Runs `npm run build`.
 6. Publishes `frontend/dist` to GitHub Pages.
@@ -966,6 +995,12 @@ accuracy:
 
 ## Frontend
 
+- [ ] Confirm the Google sign-in screen appears before dashboard data.
+- [ ] Sign in with a `mosaicwellness.in` account.
+- [ ] Confirm the header shows the correct Google name, email, and photo or
+  initials.
+- [ ] Click **Logout** and confirm the dashboard closes while Gmail remains
+  signed in.
 - [ ] Confirm only Date and Facility appear in the filter bar.
 - [ ] Select a current date and confirm KPI cards and transactions
   change.

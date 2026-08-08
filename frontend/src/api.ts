@@ -215,6 +215,19 @@ export async function getConfig() {
   return response;
 }
 
+/** Removes saved dashboard responses when a person logs out. */
+export function clearCachedDashboardData() {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  [
+    DASHBOARD_SNAPSHOT_KEY,
+    CONFIG_SNAPSHOT_KEY,
+    CYCLE_COVERAGE_SNAPSHOT_KEY
+  ].forEach((key) => window.localStorage.removeItem(key));
+}
+
 export function getCachedCycleCoverage() {
   return readSnapshot<CycleCoverageData>(CYCLE_COVERAGE_SNAPSHOT_KEY);
 }

@@ -839,7 +839,13 @@ function AbcBreakdownPanel({
     );
   }
 
-  const rows = [...breakdown.classes, breakdown.total];
+  const hasUnclassifiedSkus = breakdown.unclassifiedSkuCount > 0;
+  const rows = [
+    ...breakdown.classes.filter(
+      (row) => row.abcClass !== 'Unclassified' || row.uniqueSkuCount > 0
+    ),
+    breakdown.total
+  ];
 
   return (
     <section
@@ -863,16 +869,12 @@ function AbcBreakdownPanel({
           <span className="rounded-full bg-blue-50 px-3 py-1.5 text-blue-800 dark:bg-blue-950 dark:text-blue-200">
             Mapped SKUs: {formatNumber(breakdown.mappedSkuCount)}
           </span>
-          <span
-            className={`rounded-full px-3 py-1.5 ${
-              breakdown.unclassifiedSkuCount > 0
-                ? 'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200'
-                : 'bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200'
-            }`}
-          >
-            Unclassified SKUs:{' '}
-            {formatNumber(breakdown.unclassifiedSkuCount)}
-          </span>
+          {hasUnclassifiedSkus ? (
+            <span className="rounded-full bg-amber-100 px-3 py-1.5 text-amber-900 dark:bg-amber-950 dark:text-amber-200">
+              Unclassified SKUs:{' '}
+              {formatNumber(breakdown.unclassifiedSkuCount)}
+            </span>
+          ) : null}
         </div>
       </div>
 
@@ -882,9 +884,11 @@ function AbcBreakdownPanel({
       </div>
 
       <p className="mt-4 text-xs leading-5 text-slate-500 dark:text-slate-400">
-        Unclassified includes blank or invalid ABC Class entries and SKUs not
-        found in SKU_MASTER. COGS values exclude GST; rows without a valid cost
-        remain visible in Cost Coverage but are excluded from value totals.
+        {hasUnclassifiedSkus
+          ? 'Unclassified includes blank or invalid ABC Class entries and SKUs not found in SKU_MASTER. '
+          : ''}
+        COGS values exclude GST; rows without a valid cost remain visible in
+        Cost Coverage but are excluded from value totals.
       </p>
     </section>
   );

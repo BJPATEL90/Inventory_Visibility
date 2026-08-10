@@ -764,24 +764,16 @@ Expected result:
 
 # Part 4: GitHub Pages deployment
 
-## 1. Add the Apps Script URL as a repository secret
+## 1. Check the Apps Script deployment URL
 
-1. Open [the GitHub repository](https://github.com/BJPATEL90/Inventory_Visibility).
-2. Select **Settings**.
-3. Select **Secrets and variables > Actions**.
-4. Open the **Secrets** tab.
-5. Click **New repository secret**.
-6. Enter this exact name:
+The current public Apps Script `/exec` URL is configured as
+`VITE_APPS_SCRIPT_URL` in `.github/workflows/deploy-pages.yml`. Vite includes
+this URL in the published browser files, so it is configuration rather than a
+private secret.
 
-```text
-VITE_APPS_SCRIPT_URL
-```
-
-7. Paste the Apps Script `/exec` URL as the value.
-8. Click **Add secret**.
-
-The workflow deliberately fails at **Check Apps Script URL** if this secret is
-missing.
+When Apps Script is moved to a different deployment, update the workflow URL
+and `frontend/.env.local` together. Test the new URL with `?action=dashboard`
+and `?action=ownSourceAudit` before publishing the frontend.
 
 ## 2. Google sign-in configuration
 
@@ -807,7 +799,7 @@ The workflow:
 
 1. Downloads the repository.
 2. Uses Node.js 22.
-3. Checks `VITE_APPS_SCRIPT_URL` and the public Google OAuth client ID.
+3. Checks the public Google OAuth client ID.
 4. Runs `npm ci` in `frontend`.
 5. Runs `npm run build`.
 6. Publishes `frontend/dist` to GitHub Pages.
@@ -1055,20 +1047,18 @@ accuracy:
 - [ ] Confirm the latest Apps Script code was saved and deployed as a new Web
   App version.
 - [ ] Confirm the Web App `/exec` URL returns JSON.
-- [ ] Confirm the GitHub secret `VITE_APPS_SCRIPT_URL` exists.
+- [ ] Confirm the workflow uses the current Apps Script `/exec` URL.
 - [ ] Confirm the latest GitHub Actions run is green.
 - [ ] Open the published dashboard after stopping the local development server.
 - [ ] Refresh the published page and confirm it does not show a 404.
 
 # Common errors
 
-## GitHub Actions says `VITE_APPS_SCRIPT_URL is missing`
+## GitHub Pages shows data from an older Apps Script version
 
-Add the repository secret under:
-
-**Settings > Secrets and variables > Actions > New repository secret**
-
-Use the exact name `VITE_APPS_SCRIPT_URL`, then rerun the workflow.
+Open `.github/workflows/deploy-pages.yml` and confirm
+`VITE_APPS_SCRIPT_URL` points to the current `/exec` deployment. Also update
+`frontend/.env.local` for local testing, then push the workflow change.
 
 ## Apps Script URL returns HTML instead of JSON
 

@@ -33,13 +33,8 @@ jobs:
 
       - name: Check frontend configuration
         env:
-          VITE_APPS_SCRIPT_URL: ${{ secrets.VITE_APPS_SCRIPT_URL }}
           VITE_GOOGLE_CLIENT_ID: 1021762366002-nsjs0p1e38ilkm3cogaagu03kdbm0s32.apps.googleusercontent.com
         run: |
-          if [ -z "$VITE_APPS_SCRIPT_URL" ]; then
-            echo "::error::Add the VITE_APPS_SCRIPT_URL repository secret before deploying."
-            exit 1
-          fi
           if [ -z "$VITE_GOOGLE_CLIENT_ID" ]; then
             echo "::error::Add VITE_GOOGLE_CLIENT_ID to the Pages workflow before deploying."
             exit 1
@@ -52,7 +47,7 @@ jobs:
       - name: Build frontend
         working-directory: frontend
         env:
-          VITE_APPS_SCRIPT_URL: ${{ secrets.VITE_APPS_SCRIPT_URL }}
+          VITE_APPS_SCRIPT_URL: https://script.google.com/macros/s/AKfycbzb3RLplMSuW6BcKVCo7HG4Jbd62qEkRF0gjMCjSrpn7F15iZKbqRSD9u_YKjEIa9HFNQ/exec
           VITE_GOOGLE_CLIENT_ID: 1021762366002-nsjs0p1e38ilkm3cogaagu03kdbm0s32.apps.googleusercontent.com
           VITE_GOOGLE_ALLOWED_DOMAIN: mosaicwellness.in
         run: npm run build

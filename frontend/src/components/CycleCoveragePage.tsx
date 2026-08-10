@@ -98,6 +98,14 @@ function CoverageAbcDetails({ breakdown }: { breakdown: CoverageAbcBreakdown }) 
       row.openingGoodQuantity > 0 ||
       row.cumulativeCountedQuantity > 0
   );
+  const totalCompletedQuantity = rows.reduce(
+    (total, row) => total + row.cumulativeCountedQuantity,
+    0
+  );
+  const totalPendingQuantity = rows.reduce(
+    (total, row) => total + row.pendingQuantity,
+    0
+  );
 
   return (
     <div className="mt-3 rounded-xl bg-white/10 p-3 ring-1 ring-white/15">
@@ -126,19 +134,37 @@ function CoverageAbcDetails({ breakdown }: { breakdown: CoverageAbcBreakdown }) 
         <table className="min-w-full text-left text-xs">
           <thead className="bg-white/10 text-blue-100">
             <tr>
-              <th className="px-3 py-2 font-semibold">ABC Class</th>
-              <th className="px-3 py-2 text-right font-semibold">
-                Completed contribution
+              <th rowSpan={2} className="px-3 py-2 font-semibold">
+                Class
               </th>
-              <th className="px-3 py-2 text-right font-semibold">
-                Pending contribution
+              <th
+                colSpan={2}
+                className="border-l border-white/10 px-3 py-2 text-center font-semibold text-emerald-100"
+              >
+                Completed
               </th>
-              <th className="px-3 py-2 text-right font-semibold">
-                Opening GOOD Qty
+              <th
+                colSpan={2}
+                className="border-l border-white/10 px-3 py-2 text-center font-semibold text-amber-100"
+              >
+                Pending
               </th>
-              <th className="px-3 py-2 text-right font-semibold">
-                Counted Qty
+              <th
+                rowSpan={2}
+                className="border-l border-white/10 px-3 py-2 text-right font-semibold"
+              >
+                Total %
               </th>
+            </tr>
+            <tr className="border-t border-white/10 text-[11px]">
+              <th className="border-l border-white/10 px-3 py-1.5 text-right font-medium">
+                Qty
+              </th>
+              <th className="px-3 py-1.5 text-right font-medium">%</th>
+              <th className="border-l border-white/10 px-3 py-1.5 text-right font-medium">
+                Qty
+              </th>
+              <th className="px-3 py-1.5 text-right font-medium">%</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-white/10">
@@ -151,20 +177,44 @@ function CoverageAbcDetails({ breakdown }: { breakdown: CoverageAbcBreakdown }) 
                     {row.abcClass}
                   </span>
                 </td>
+                <td className="border-l border-white/10 px-3 py-2 text-right text-blue-100">
+                  {formatNumber(row.cumulativeCountedQuantity)}
+                </td>
                 <td className="px-3 py-2 text-right font-bold text-emerald-200">
                   {formatPercent(row.completedContributionPercent)}
+                </td>
+                <td className="border-l border-white/10 px-3 py-2 text-right text-blue-100">
+                  {formatNumber(row.pendingQuantity)}
                 </td>
                 <td className="px-3 py-2 text-right font-bold text-amber-200">
                   {formatPercent(row.pendingContributionPercent)}
                 </td>
-                <td className="px-3 py-2 text-right text-blue-100">
-                  {formatNumber(row.openingGoodQuantity)}
-                </td>
-                <td className="px-3 py-2 text-right text-blue-100">
-                  {formatNumber(row.cumulativeCountedQuantity)}
+                <td className="border-l border-white/10 px-3 py-2 text-right font-black text-white">
+                  {formatPercent(
+                    row.completedContributionPercent +
+                      row.pendingContributionPercent
+                  )}
                 </td>
               </tr>
             ))}
+            <tr className="bg-white/10 font-black text-white">
+              <td className="px-3 py-2">Total</td>
+              <td className="border-l border-white/10 px-3 py-2 text-right">
+                {formatNumber(totalCompletedQuantity)}
+              </td>
+              <td className="px-3 py-2 text-right text-emerald-200">
+                {formatPercent(breakdown.completedPercent)}
+              </td>
+              <td className="border-l border-white/10 px-3 py-2 text-right">
+                {formatNumber(totalPendingQuantity)}
+              </td>
+              <td className="px-3 py-2 text-right text-amber-200">
+                {formatPercent(breakdown.pendingPercent)}
+              </td>
+              <td className="border-l border-white/10 px-3 py-2 text-right">
+                {formatPercent(breakdown.totalPercent)}
+              </td>
+            </tr>
           </tbody>
         </table>
       </div>

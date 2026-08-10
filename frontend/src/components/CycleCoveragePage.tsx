@@ -1,11 +1,14 @@
+import { useState } from 'react';
 import {
   AlertCircle,
   CalendarDays,
+  ChevronDown,
   PackageCheck,
   RefreshCw,
   Target
 } from 'lucide-react';
 import type {
+  CoverageAbcBreakdown,
   CoverageFacilityKey,
   CycleCoverageData,
   CycleCoverageRow
@@ -80,6 +83,99 @@ function ProgressBar({ value }: { value: number }) {
   );
 }
 
+const ABC_CLASS_COLORS = {
+  A: 'bg-blue-400 text-blue-100',
+  B: 'bg-violet-400 text-violet-100',
+  C: 'bg-cyan-400 text-cyan-100',
+  Unclassified: 'bg-amber-400 text-amber-100'
+} as const;
+
+/** Expandable A/B/C contribution detail for the overall 100% coverage. */
+function CoverageAbcDetails({ breakdown }: { breakdown: CoverageAbcBreakdown }) {
+  const rows = breakdown.classes.filter(
+    (row) =>
+      row.abcClass !== 'Unclassified' ||
+      row.openingGoodQuantity > 0 ||
+      row.cumulativeCountedQuantity > 0
+  );
+
+  return (
+    <div className="mt-3 rounded-xl bg-white/10 p-3 ring-1 ring-white/15">
+      <div className="grid gap-2 sm:grid-cols-3">
+        <div className="rounded-lg bg-emerald-400/15 px-3 py-2 ring-1 ring-emerald-300/25">
+          <p className="text-xs text-emerald-100">Completed coverage</p>
+          <p className="mt-0.5 text-lg font-black">
+            {formatPercent(breakdown.completedPercent)}
+          </p>
+        </div>
+        <div className="rounded-lg bg-amber-400/15 px-3 py-2 ring-1 ring-amber-300/25">
+          <p className="text-xs text-amber-100">Pending coverage</p>
+          <p className="mt-0.5 text-lg font-black">
+            {formatPercent(breakdown.pendingPercent)}
+          </p>
+        </div>
+        <div className="rounded-lg bg-white/10 px-3 py-2 ring-1 ring-white/15">
+          <p className="text-xs text-blue-100">Reconciled total</p>
+          <p className="mt-0.5 text-lg font-black">
+            {formatPercent(breakdown.totalPercent)}
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-3 overflow-x-auto rounded-lg ring-1 ring-white/15">
+        <table className="min-w-full text-left text-xs">
+          <thead className="bg-white/10 text-blue-100">
+            <tr>
+              <th className="px-3 py-2 font-semibold">ABC Class</th>
+              <th className="px-3 py-2 text-right font-semibold">
+                Completed contribution
+              </th>
+              <th className="px-3 py-2 text-right font-semibold">
+                Pending contribution
+              </th>
+              <th className="px-3 py-2 text-right font-semibold">
+                Opening GOOD Qty
+              </th>
+              <th className="px-3 py-2 text-right font-semibold">
+                Counted Qty
+              </th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-white/10">
+            {rows.map((row) => (
+              <tr key={row.abcClass} className="bg-blue-950/20">
+                <td className="px-3 py-2">
+                  <span
+                    className={`inline-flex min-w-8 justify-center rounded-full px-2 py-1 font-black ${ABC_CLASS_COLORS[row.abcClass]}`}
+                  >
+                    {row.abcClass}
+                  </span>
+                </td>
+                <td className="px-3 py-2 text-right font-bold text-emerald-200">
+                  {formatPercent(row.completedContributionPercent)}
+                </td>
+                <td className="px-3 py-2 text-right font-bold text-amber-200">
+                  {formatPercent(row.pendingContributionPercent)}
+                </td>
+                <td className="px-3 py-2 text-right text-blue-100">
+                  {formatNumber(row.openingGoodQuantity)}
+                </td>
+                <td className="px-3 py-2 text-right text-blue-100">
+                  {formatNumber(row.cumulativeCountedQuantity)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="mt-2 text-[11px] leading-5 text-blue-200">
+        Completed A/B/C contributions add to overall coverage. Pending A/B/C
+        contributions add to the remaining coverage; together they equal 100%.
+      </p>
+    </div>
+  );
+}
+
 /** Reusable overall quantity-coverage banner for home and facility pages. */
 export function CycleCoverageBanner({
   latest,
@@ -96,6 +192,8 @@ export function CycleCoverageBanner({
   changeAlertThreshold?: number;
   className?: string;
 }) {
+  const [showAbcDetails, setShowAbcDetails] = useState(false);
+
   if (!latest) {
     return (
       <section
@@ -199,6 +297,29 @@ export function CycleCoverageBanner({
           style={{ width: progressWidth(latest.totalCompletionPercent) }}
         />
       </div>
+      {latest.abcCoverage ? (
+        <>
+          <button
+            type="button"
+            aria-expanded={showAbcDetails}
+            onClick={() => setShowAbcDetails((current) => !current)}
+            className="mt-3 flex w-full items-center justify-between rounded-lg px-1 py-1 text-left text-xs font-bold text-blue-100 transition hover:text-white focus:outline-none focus:ring-2 focus:ring-cyan-300/60"
+          >
+            <span>
+              {showAbcDetails ? 'Hide ABC details' : 'Show ABC details'}
+            </span>
+            <ChevronDown
+              aria-hidden="true"
+              className={`h-4 w-4 transition-transform ${
+                showAbcDetails ? 'rotate-180' : ''
+              }`}
+            />
+          </button>
+          {showAbcDetails ? (
+            <CoverageAbcDetails breakdown={latest.abcCoverage} />
+          ) : null}
+        </>
+      ) : null}
     </section>
   );
 }

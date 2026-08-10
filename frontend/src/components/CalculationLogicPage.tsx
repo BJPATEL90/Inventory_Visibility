@@ -451,6 +451,16 @@ export function CalculationLogicPage({
               text: 'The denominator uses that day’s opening GOOD inventory, so the percentage can change when the opening inventory changes.'
             },
             {
+              name: 'ABC completed contribution',
+              formula: 'Class Cumulative Counted Qty / Total Opening GOOD Qty x 100',
+              text: 'A, B, and C completed contributions reconcile to the overall quantity coverage shown in the main banner.'
+            },
+            {
+              name: 'ABC pending contribution',
+              formula: 'Remaining class share allocated to 100% - Overall Coverage',
+              text: 'A, B, and C pending contributions reconcile to the remaining coverage, so completed plus pending always equals 100%.'
+            },
+            {
               name: 'Inventory change',
               formula: '(Today GOOD Qty − Previous GOOD Qty) ÷ Previous GOOD Qty × 100',
               text: `An alert note is created when the absolute change reaches the Config threshold${config ? ` of ${numberFormatter.format(config.inventoryChangeAlertPercent)}%` : ''}.`

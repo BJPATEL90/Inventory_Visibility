@@ -159,6 +159,25 @@ export interface CoverageFacilityMetrics {
   completionPercent: number;
 }
 
+export type CoverageAbcClass = 'A' | 'B' | 'C' | 'Unclassified';
+
+export interface CoverageAbcMetrics {
+  abcClass: CoverageAbcClass;
+  openingGoodQuantity: number;
+  dailyCountedQuantity: number;
+  cumulativeCountedQuantity: number;
+  completedContributionPercent: number;
+  pendingQuantity: number;
+  pendingContributionPercent: number;
+}
+
+export interface CoverageAbcBreakdown {
+  classes: CoverageAbcMetrics[];
+  completedPercent: number;
+  pendingPercent: number;
+  totalPercent: number;
+}
+
 export interface CycleCoverageRow {
   date: string;
   facilities: Record<CoverageFacilityKey, CoverageFacilityMetrics>;
@@ -172,6 +191,7 @@ export interface CycleCoverageRow {
   sourceFile: string;
   importedAt: string;
   importStatus: string;
+  abcCoverage?: CoverageAbcBreakdown;
 }
 
 export interface CycleCoverageData {

@@ -2377,6 +2377,9 @@ function testCycleCoverageAbcContributions() {
     5,
     'C pending contribution'
   );
+  assertEqual_(result.classes[0].pendingQuantity, 15, 'A pending quantity');
+  assertEqual_(result.classes[1].pendingQuantity, 10, 'B pending quantity');
+  assertEqual_(result.classes[2].pendingQuantity, 5, 'C pending quantity');
   assertEqual_(result.totalPercent, 100, 'Completed plus pending');
 
   const output = {
@@ -3338,6 +3341,7 @@ function getCycleCoverage(optionalMonth) {
     };
   }
 
+  repairLatestCoverageAbcOpeningIfMissing_(spreadsheet, sheet);
   const records = readCycleCoverageRecords_(sheet);
   const availableMonths = uniqueSorted_(records.map(function (record) {
     return record.date.slice(0, 7);
@@ -3606,6 +3610,85 @@ function coverageCountedQuantitiesByDate_(inventoryRows, cycleStartDate) {
   });
 
   return result;
+}
+
+/**
+ * Repairs a latest coverage row whose A/B/C opening quantities are blank.
+ *
+ * A Gmail trigger can occasionally finish writing the facility totals before
+ * the newer ABC columns are populated. When that happens, the overall pending
+ * percentage is still correct but each class pending quantity appears as zero.
+ * This small self-heal reloads only the latest source CSV and writes the missing
+ * A/B/C opening split before the API response is returned.
+ */
+function repairLatestCoverageAbcOpeningIfMissing_(spreadsheet, sheet) {
+  if (!sheet || sheet.getLastRow() <= 1) {
+    return false;
+  }
+
+  const headers = sheet
+    .getRange(1, 1, 1, sheet.getLastColumn())
+    .getDisplayValues()[0];
+  const indexes = headerIndexMap_(headers);
+  const latestRowNumber = sheet.getLastRow();
+  const latestRow = sheet
+    .getRange(latestRowNumber, 1, 1, headers.length)
+    .getValues()[0];
+  const totalGoodQuantity = toNumber_(
+    latestRow[indexes['TOTAL Good Qty']]
+  );
+  const storedAbcTotal = COVERAGE_ABC_CLASSES.reduce(
+    function (total, abcClass) {
+      return total + toNumber_(
+        latestRow[indexes[abcClass + ' Good Qty']]
+      );
+    },
+    0
+  );
+
+  if (totalGoodQuantity <= 0 || storedAbcTotal > 0) {
+    return false;
+  }
+
+  const abcClassMap = readAbcClassMap_(spreadsheet);
+  const records = [{
+    row: latestRow,
+    date: normalizeDate_(latestRow[indexes.Date], getTimeZone_())
+  }];
+  const repaired = refreshLatestCoverageAbcOpening_(
+    records,
+    indexes,
+    abcClassMap
+  );
+
+  if (!repaired) {
+    return false;
+  }
+
+  const repairedAbcTotal = COVERAGE_ABC_CLASSES.reduce(
+    function (total, abcClass) {
+      return total + toNumber_(
+        latestRow[indexes[abcClass + ' Good Qty']]
+      );
+    },
+    0
+  );
+
+  if (Math.abs(repairedAbcTotal - totalGoodQuantity) > 0.01) {
+    console.warn(
+      'ABC opening repair was not saved because its total did not match ' +
+        'the latest TOTAL Good Qty.'
+    );
+    return false;
+  }
+
+  sheet
+    .getRange(latestRowNumber, 1, 1, headers.length)
+    .setValues([latestRow]);
+  console.log(
+    'Repaired the latest ABC opening split for ' + records[0].date + '.'
+  );
+  return true;
 }
 
 /** Aggregates counted System Quantity by transaction date and ABC class. */

@@ -501,7 +501,7 @@ function getCombinedData(
       const unitCost = costRecord ? costRecord.unitCost : null;
       const abcClass = normalizedSku && abcClassMap[normalizedSku]
         ? abcClassMap[normalizedSku]
-        : 'Unclassified';
+        : 'C';
 
       combinedRows.push(normalizeNtfShortage_({
         id: sheetName + '-' + String(rowIndex + 1),
@@ -614,7 +614,7 @@ function readB2cCombinedRows_(
     const unitCost = costRecord ? costRecord.unitCost : null;
     const abcClass = normalizedSku && abcClassMap[normalizedSku]
       ? abcClassMap[normalizedSku]
-      : 'Unclassified';
+      : 'C';
 
     rows.push({
       id: B2C_SOURCE_SHEET_NAME + '-' + String(rowIndex + 1),
@@ -718,7 +718,7 @@ function getHistoricalData(
         : null;
     const abcClass = normalizedSku && abcClassMap[normalizedSku]
       ? abcClassMap[normalizedSku]
-      : 'Unclassified';
+      : 'C';
     const physicalQuantity = toNumber_(row[indexes['Phy']]);
     const systemQuantity = toNumber_(row[indexes['Sys']]);
     const rawDifference = row[indexes['Diff.']];
@@ -1358,8 +1358,8 @@ function getSkuMaster() {
 /**
  * Calculates ABC-class quantity and COGS summaries for one reporting period.
  *
- * SKU_MASTER supplies A, B, or C by SKU. Missing or invalid mappings are kept
- * in Unclassified so no inventory is silently omitted. Quantity accuracy uses
+ * SKU_MASTER supplies A, B, or C by SKU. Missing or invalid mappings default
+ * to C so no inventory is silently omitted. Quantity accuracy uses
  * absolute quantity difference. Value accuracy uses absolute difference value
  * for rows that have a valid COGS rate excluding GST.
  */
@@ -2902,7 +2902,7 @@ function testAbcBreakdownCalculations() {
   assertEqual_(bClass.valueAccuracy, 94, 'B value accuracy');
   assertEqual_(result.total.systemQuantity, 105, 'Total system quantity');
   assertEqual_(result.total.physicalQuantity, 102, 'Total physical quantity');
-  assertEqual_(result.unclassifiedSkuCount, 1, 'Unclassified SKU count');
+  assertEqual_(result.unclassifiedSkuCount, 0, 'Unclassified SKU count');
 
   const output = {
     passed: true,
@@ -3997,7 +3997,7 @@ function parseInventoryExportCsv_(csvText, optionalAbcClassMap) {
       const sku = skuIndex >= 0 ? normalizeSku_(row[skuIndex]) : '';
       const abcClass = sku && abcClassMap[sku]
         ? abcClassMap[sku]
-        : 'Unclassified';
+        : 'C';
       abcGoodQuantities[abcClass] += quantity;
     } else if (inventoryType === 'BAD_INVENTORY') {
       facilities[facility].badQuantity += quantity;
@@ -4373,6 +4373,33 @@ function buildCoverageAbcBreakdown_(
     }
   }
 
+  // Older snapshots may still contain an Unclassified column. The current
+  // business rule treats it as C, including opening, counted, and pending qty.
+  const cClass = classTotals.filter(function (item) {
+    return item.abcClass === 'C';
+  })[0];
+  const unclassified = classTotals.filter(function (item) {
+    return item.abcClass === 'Unclassified';
+  })[0];
+  if (cClass && unclassified) {
+    cClass.openingGoodQuantity = round_(
+      cClass.openingGoodQuantity + unclassified.openingGoodQuantity,
+      2
+    );
+    cClass.dailyCountedQuantity = round_(
+      cClass.dailyCountedQuantity + unclassified.dailyCountedQuantity,
+      2
+    );
+    cClass.cumulativeCountedQuantity = round_(
+      cClass.cumulativeCountedQuantity +
+        unclassified.cumulativeCountedQuantity,
+      2
+    );
+  }
+  classTotals = classTotals.filter(function (item) {
+    return item.abcClass !== 'Unclassified';
+  });
+
   return calculateCoverageAbcBreakdown_(
     classTotals,
     totalGoodQuantity,
@@ -4520,12 +4547,12 @@ function emptyCoverageAbcNumberMap_() {
   return result;
 }
 
-/** Keeps unexpected or blank master values visible as Unclassified. */
+/** Parks unexpected or blank master values in C by default. */
 function normalizeCoverageAbcClass_(value) {
   const abcClass = cleanText_(value).toUpperCase();
   return ['A', 'B', 'C'].indexOf(abcClass) >= 0
     ? abcClass
-    : 'Unclassified';
+    : 'C';
 }
 
 /** Creates a stable signature so master changes refresh the saved ABC split. */
@@ -6208,7 +6235,7 @@ function readCostMap_(spreadsheet) {
  *
  * The dashboard remains available while the new column is being prepared. If
  * SKU_MASTER or ABC Class is missing, an empty map is returned and inventory
- * is reported under Unclassified.
+ * is reported under C by default.
  */
 function readAbcClassMap_(spreadsheet) {
   const sheet = findSheetIgnoreCase_(
@@ -6233,7 +6260,7 @@ function readAbcClassMap_(spreadsheet) {
   if (skuIndex < 0 || abcClassIndex < 0) {
     console.warn(
       'SKU_MASTER needs SKU and ABC Class columns. ' +
-        'All SKUs are currently Unclassified.'
+        'All SKUs currently default to C.'
     );
     return abcClassMap;
   }
@@ -6427,12 +6454,12 @@ function countMappedAbcSkus_(classRows) {
   }, 0);
 }
 
-/** Keeps only A, B, and C; every other value remains visible as Unclassified. */
+/** Keeps only A, B, and C; every other value defaults to C. */
 function normalizeAbcClass_(value) {
   const abcClass = cleanText_(value).toUpperCase();
   return ['A', 'B', 'C'].indexOf(abcClass) >= 0
     ? abcClass
-    : 'Unclassified';
+    : 'C';
 }
 
 /**

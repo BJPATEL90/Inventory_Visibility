@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import {
   clearCachedDashboardData,
+  createVisibleTransactionsCsv,
   downloadTransactionsCsv,
   getActivityStatus,
   getBinMaster,
@@ -1667,6 +1668,28 @@ export default function App() {
       : period.zeroActivity.message;
   }
 
+  function exportVisibleTransactionsCsv() {
+    if (!transactionPage || transactions.length === 0) {
+      return;
+    }
+
+    const result = createVisibleTransactionsCsv(
+      transactions,
+      transactionStartDate,
+      transactionEndDate,
+      transactionPage.page
+    );
+    const downloadUrl = URL.createObjectURL(result.blob);
+    const link = document.createElement('a');
+
+    link.href = downloadUrl;
+    link.download = result.fileName;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(downloadUrl);
+  }
+
   if (!signedInUser) {
     return <SignInScreen onSignIn={setSignedInUser} />;
   }
@@ -1918,8 +1941,9 @@ export default function App() {
                   onSearchChange={updateTableSearch}
                   onSortChange={updateTableSort}
                   onPageChange={setTablePage}
-                  onPageSizeChange={updateTablePageSize}
-                  onExportCsv={() => {
+                   onPageSizeChange={updateTablePageSize}
+                   onExportVisibleCsv={exportVisibleTransactionsCsv}
+                   onExportCsv={() => {
                     void exportTransactionsCsv();
                   }}
                 />

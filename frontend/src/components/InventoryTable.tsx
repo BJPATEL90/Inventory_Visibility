@@ -33,6 +33,7 @@ interface InventoryTableProps {
   ) => void;
   onPageChange: (page: number) => void;
   onPageSizeChange: (pageSize: number) => void;
+  onExportVisibleCsv: () => void;
   onExportCsv: () => void;
 }
 
@@ -110,6 +111,7 @@ export function InventoryTable({
   onSortChange,
   onPageChange,
   onPageSizeChange,
+  onExportVisibleCsv,
   onExportCsv
 }: InventoryTableProps) {
   const firstVisibleRow = totalRows === 0 ? 0 : (page - 1) * pageSize + 1;
@@ -220,7 +222,8 @@ export function InventoryTable({
               Inventory Transactions
             </h3>
             <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-              Search, sort, review, and export the current filtered rows.
+              Quick CSV downloads this visible page immediately. All rows CSV
+              may take a few seconds while Google prepares the full selection.
             </p>
           </div>
         </div>
@@ -240,15 +243,28 @@ export function InventoryTable({
               className="h-10 w-full rounded-lg border border-slate-300 bg-white pl-9 pr-3 text-sm text-slate-800 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
             />
           </label>
-          <button
-            type="button"
-            onClick={onExportCsv}
-            disabled={totalRows === 0 || isExporting}
-            className="flex h-10 items-center justify-center gap-2 rounded-lg bg-blue-700 px-4 text-sm font-semibold text-white transition hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <Download aria-hidden="true" className="h-4 w-4" />
-            {isExporting ? 'Preparing CSV...' : 'Export CSV'}
-          </button>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={onExportVisibleCsv}
+              disabled={rows.length === 0}
+              title="Download only the rows currently shown on this page"
+              className="flex h-10 items-center justify-center gap-2 rounded-lg border border-blue-200 bg-white px-3 text-sm font-semibold text-blue-700 transition hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-500/30 disabled:cursor-not-allowed disabled:opacity-50 dark:border-blue-800 dark:bg-slate-950 dark:text-blue-300 dark:hover:bg-blue-950/40"
+            >
+              <Download aria-hidden="true" className="h-4 w-4" />
+              Quick CSV
+            </button>
+            <button
+              type="button"
+              onClick={onExportCsv}
+              disabled={totalRows === 0 || isExporting}
+              title="Download every row matching the current filters"
+              className="flex h-10 items-center justify-center gap-2 rounded-lg bg-blue-700 px-3 text-sm font-semibold text-white transition hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Download aria-hidden="true" className="h-4 w-4" />
+              {isExporting ? 'Preparing all rows...' : 'All rows CSV'}
+            </button>
+          </div>
         </div>
       </div>
 

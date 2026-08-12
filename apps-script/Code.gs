@@ -210,6 +210,8 @@ function doGet(e) {
       data = getActivityStatus(parameters.date || '');
     } else if (action === 'cyclecoverage') {
       data = getCycleCoverage(parameters.month || '');
+    } else if (action === 'ensurecoverageautomation') {
+      data = ensureCoverageAutomation();
     } else if (action === 'b2csourceaudit') {
       data = getB2cSourceAudit();
     } else if (action === 'facilitysourceaudit') {
@@ -218,7 +220,7 @@ function doGet(e) {
       data = getOwnSourceAudit();
     } else {
       throw new Error(
-        'Unknown action. Use dashboard, refreshDashboard, transactions, transactionsCsv, facilityDashboard, binMaster, skuMaster, config, session, activityStatus, cycleCoverage, b2cSourceAudit, facilitySourceAudit, or ownSourceAudit.'
+        'Unknown action. Use dashboard, refreshDashboard, transactions, transactionsCsv, facilityDashboard, binMaster, skuMaster, config, session, activityStatus, cycleCoverage, ensureCoverageAutomation, b2cSourceAudit, facilitySourceAudit, or ownSourceAudit.'
       );
     }
 
@@ -3067,6 +3069,23 @@ function createInventoryImportTrigger() {
   };
 }
 
+/** Ensures this production project owns the recurring coverage import trigger. */
+function ensureCoverageAutomation() {
+  const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = setupCycleCoverageSheet_(spreadsheet);
+  const trigger = createInventoryImportTrigger();
+  const abcOpeningRepaired = repairLatestCoverageAbcOpeningIfMissing_(
+    spreadsheet,
+    sheet
+  );
+
+  return {
+    ready: true,
+    trigger: trigger,
+    abcOpeningRepaired: abcOpeningRepaired
+  };
+}
+
 /**
  * Imports the latest unprocessed successful shelf-inventory export from Gmail.
  *
@@ -3095,12 +3114,17 @@ function importLatestInventoryEmail() {
     const candidate = emailSearch.candidate;
 
     if (!candidate) {
+      const abcOpeningRepaired = repairLatestCoverageAbcOpeningIfMissing_(
+        spreadsheet,
+        sheet
+      );
       const skippedResult = {
         imported: false,
         skipped: true,
         message: 'No new successful inventory export email was found.',
         searchedMessageCount: emailSearch.searchedMessageCount,
-        rejectionSummary: emailSearch.rejectionSummary
+        rejectionSummary: emailSearch.rejectionSummary,
+        abcOpeningRepaired: abcOpeningRepaired
       };
       console.log(JSON.stringify(skippedResult, null, 2));
       return skippedResult;

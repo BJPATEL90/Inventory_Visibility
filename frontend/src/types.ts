@@ -250,6 +250,8 @@ export type TransactionSortKey =
   | 'differenceValue'
   | 'remark';
 
+export type TransactionCsvPeriod = 'daily' | 'mtd' | 'quarterly';
+
 export interface TransactionQuery {
   startDate: string;
   endDate: string;

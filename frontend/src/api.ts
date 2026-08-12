@@ -6,7 +6,6 @@ import type {
   DashboardConfig,
   DashboardData,
   DashboardRefreshResult,
-  InventoryTransaction,
   SkuMasterRow,
   TransactionPageData,
   TransactionQuery
@@ -214,54 +213,6 @@ export async function getConfig() {
   const response = await request<DashboardConfig>('config');
   saveSnapshot(CONFIG_SNAPSHOT_KEY, response);
   return response;
-}
-
-/** Builds an immediate CSV from transaction rows already loaded in the browser. */
-export function createVisibleTransactionsCsv(
-  rows: InventoryTransaction[],
-  startDate: string,
-  endDate: string,
-  page: number
-) {
-  const columns: Array<[
-    string,
-    (row: InventoryTransaction) => string | number | null
-  ]> = [
-    ['Date', (row) => row.date],
-    ['Facility', (row) => row.facility],
-    ['Rack', (row) => row.rack],
-    ['SKU', (row) => row.skuCode],
-    ['Item Name', (row) => row.itemName],
-    ['Shelf', (row) => row.shelf],
-    ['Batch', (row) => row.batch],
-    ['Vendor Batch', (row) => row.vendorBatchNumber],
-    ['Unit Cost', (row) => row.unitCost],
-    ['System Quantity', (row) => row.systemQuantity],
-    ['Physical Quantity', (row) => row.physicalQuantity],
-    ['Difference', (row) => row.difference],
-    ['System Value', (row) => row.systemValue],
-    ['Physical Value', (row) => row.physicalValue],
-    ['Difference Value', (row) => row.differenceValue],
-    ['Remark', (row) => row.remark]
-  ];
-  const escapeCsvCell = (value: string | number | null) => {
-    const text = value === null ? '' : String(value);
-    return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
-  };
-  const lines = [columns.map(([label]) => escapeCsvCell(label)).join(',')];
-
-  rows.forEach((row) => {
-    lines.push(
-      columns.map(([, getValue]) => escapeCsvCell(getValue(row))).join(',')
-    );
-  });
-
-  return {
-    blob: new Blob([`\uFEFF${lines.join('\r\n')}`], {
-      type: 'text/csv;charset=utf-8'
-    }),
-    fileName: `inventory-transactions-${startDate}-to-${endDate}-page-${page}.csv`
-  };
 }
 
 /** Removes saved dashboard responses when a person logs out. */

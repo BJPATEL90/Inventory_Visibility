@@ -22,7 +22,6 @@ import {
 } from 'lucide-react';
 import {
   clearCachedDashboardData,
-  createVisibleTransactionsCsv,
   downloadTransactionsCsv,
   getActivityStatus,
   getBinMaster,
@@ -64,6 +63,7 @@ import type {
   PeriodKey,
   SkuMasterRow,
   TransactionQuery,
+  TransactionCsvPeriod,
   TransactionSortKey
 } from './types';
 
@@ -79,6 +79,25 @@ type DashboardPage =
   | 'transactions'
   | 'facilityProgress'
   | 'calculationLogic';
+
+/** Builds a daily, month-to-date, or quarter-to-date range around one date. */
+function csvPeriodRange(period: TransactionCsvPeriod, referenceDate: string) {
+  const match = referenceDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match || period === 'daily') {
+    return { startDate: referenceDate, endDate: referenceDate };
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const startMonth = period === 'mtd'
+    ? month
+    : Math.floor((month - 1) / 3) * 3 + 1;
+
+  return {
+    startDate: `${year}-${String(startMonth).padStart(2, '0')}-01`,
+    endDate: referenceDate
+  };
+}
 
 interface DashboardUser {
   name: string;
@@ -1303,7 +1322,8 @@ export default function App() {
     useState<TransactionSortKey>('date');
   const [tableSortDirection, setTableSortDirection] =
     useState<'asc' | 'desc'>('desc');
-  const [isExportingCsv, setIsExportingCsv] = useState(false);
+  const [exportingCsvPeriod, setExportingCsvPeriod] =
+    useState<TransactionCsvPeriod | null>(null);
   const [isManualRefreshing, setIsManualRefreshing] = useState(false);
   const [selectedAbcPeriod, setSelectedAbcPeriod] =
     useState<PeriodKey | null>(null);
@@ -1590,20 +1610,25 @@ export default function App() {
     setTablePageSize(pageSize);
   }
 
-  async function exportTransactionsCsv() {
-    setIsExportingCsv(true);
+  async function exportTransactionsCsv(period: TransactionCsvPeriod) {
+    const referenceDate = filters.date || transactionEndDate;
+    const range = csvPeriodRange(period, referenceDate);
+    setExportingCsvPeriod(period);
 
     try {
       const result = await downloadTransactionsCsv({
         ...transactionParameters,
+        startDate: range.startDate,
+        endDate: range.endDate,
         page: 1,
-        search: tableSearch
+        search: tableSearch,
+        includeUndatedNtf: period !== 'daily'
       });
       const downloadUrl = URL.createObjectURL(result.blob);
       const link = document.createElement('a');
 
       link.href = downloadUrl;
-      link.download = result.fileName;
+      link.download = `inventory-transactions-${period}-${range.startDate}-to-${range.endDate}.csv`;
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -1615,7 +1640,7 @@ export default function App() {
           : 'Unable to prepare the CSV file.'
       );
     } finally {
-      setIsExportingCsv(false);
+      setExportingCsvPeriod(null);
     }
   }
 
@@ -1666,28 +1691,6 @@ export default function App() {
             : ''
         }`
       : period.zeroActivity.message;
-  }
-
-  function exportVisibleTransactionsCsv() {
-    if (!transactionPage || transactions.length === 0) {
-      return;
-    }
-
-    const result = createVisibleTransactionsCsv(
-      transactions,
-      transactionStartDate,
-      transactionEndDate,
-      transactionPage.page
-    );
-    const downloadUrl = URL.createObjectURL(result.blob);
-    const link = document.createElement('a');
-
-    link.href = downloadUrl;
-    link.download = result.fileName;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(downloadUrl);
   }
 
   if (!signedInUser) {
@@ -1937,14 +1940,13 @@ export default function App() {
                   sortKey={tableSortKey}
                   sortDirection={tableSortDirection}
                   isLoading={transactionsQuery.isFetching}
-                  isExporting={isExportingCsv}
+                  exportingPeriod={exportingCsvPeriod}
                   onSearchChange={updateTableSearch}
                   onSortChange={updateTableSort}
                   onPageChange={setTablePage}
-                   onPageSizeChange={updateTablePageSize}
-                   onExportVisibleCsv={exportVisibleTransactionsCsv}
-                   onExportCsv={() => {
-                    void exportTransactionsCsv();
+                  onPageSizeChange={updateTablePageSize}
+                  onExportCsv={(period) => {
+                    void exportTransactionsCsv(period);
                   }}
                 />
               )}

@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import type {
   InventoryTransaction,
+  TransactionCsvPeriod,
   TransactionSortKey
 } from '../types';
 
@@ -25,7 +26,7 @@ interface InventoryTableProps {
   sortKey: TransactionSortKey;
   sortDirection: SortDirection;
   isLoading: boolean;
-  isExporting: boolean;
+  exportingPeriod: TransactionCsvPeriod | null;
   onSearchChange: (value: string) => void;
   onSortChange: (
     key: TransactionSortKey,
@@ -33,8 +34,7 @@ interface InventoryTableProps {
   ) => void;
   onPageChange: (page: number) => void;
   onPageSizeChange: (pageSize: number) => void;
-  onExportVisibleCsv: () => void;
-  onExportCsv: () => void;
+  onExportCsv: (period: TransactionCsvPeriod) => void;
 }
 
 interface ColumnDefinition {
@@ -106,12 +106,11 @@ export function InventoryTable({
   sortKey,
   sortDirection,
   isLoading,
-  isExporting,
+  exportingPeriod,
   onSearchChange,
   onSortChange,
   onPageChange,
   onPageSizeChange,
-  onExportVisibleCsv,
   onExportCsv
 }: InventoryTableProps) {
   const firstVisibleRow = totalRows === 0 ? 0 : (page - 1) * pageSize + 1;
@@ -222,8 +221,7 @@ export function InventoryTable({
               Inventory Transactions
             </h3>
             <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-              Quick CSV downloads this visible page immediately. All rows CSV
-              may take a few seconds while Google prepares the full selection.
+              Download the selected day, month-to-date, or quarter-to-date.
             </p>
           </div>
         </div>
@@ -243,27 +241,23 @@ export function InventoryTable({
               className="h-10 w-full rounded-lg border border-slate-300 bg-white pl-9 pr-3 text-sm text-slate-800 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
             />
           </label>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={onExportVisibleCsv}
-              disabled={rows.length === 0}
-              title="Download only the rows currently shown on this page"
-              className="flex h-10 items-center justify-center gap-2 rounded-lg border border-blue-200 bg-white px-3 text-sm font-semibold text-blue-700 transition hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-500/30 disabled:cursor-not-allowed disabled:opacity-50 dark:border-blue-800 dark:bg-slate-950 dark:text-blue-300 dark:hover:bg-blue-950/40"
-            >
-              <Download aria-hidden="true" className="h-4 w-4" />
-              Quick CSV
-            </button>
-            <button
-              type="button"
-              onClick={onExportCsv}
-              disabled={totalRows === 0 || isExporting}
-              title="Download every row matching the current filters"
-              className="flex h-10 items-center justify-center gap-2 rounded-lg bg-blue-700 px-3 text-sm font-semibold text-white transition hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <Download aria-hidden="true" className="h-4 w-4" />
-              {isExporting ? 'Preparing all rows...' : 'All rows CSV'}
-            </button>
+          <div className="flex flex-wrap gap-2">
+            {([
+              ['daily', 'Daily CSV'],
+              ['mtd', 'MTD CSV'],
+              ['quarterly', 'Quarter CSV']
+            ] as Array<[TransactionCsvPeriod, string]>).map(([period, label]) => (
+              <button
+                key={period}
+                type="button"
+                onClick={() => onExportCsv(period)}
+                disabled={Boolean(exportingPeriod)}
+                className="flex h-10 items-center justify-center gap-2 rounded-lg bg-blue-700 px-3 text-sm font-semibold text-white transition hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Download aria-hidden="true" className="h-4 w-4" />
+                {exportingPeriod === period ? 'Preparing...' : label}
+              </button>
+            ))}
           </div>
         </div>
       </div>

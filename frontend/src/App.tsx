@@ -672,16 +672,16 @@ function SectionNavigation({
       icon: Gauge
     },
     {
-      page: 'transactions' as const,
-      label: 'Inventory Transactions',
-      description: 'Search and CSV download',
-      icon: Database
-    },
-    {
       page: 'facilityProgress' as const,
       label: 'Facility MTD Progress',
       description: 'Inventory and count coverage',
       icon: BarChart3
+    },
+    {
+      page: 'transactions' as const,
+      label: 'Inventory Transactions',
+      description: 'Search and CSV download',
+      icon: Database
     },
     {
       page: 'calculationLogic' as const,

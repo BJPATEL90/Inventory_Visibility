@@ -129,6 +129,7 @@ const COVERAGE_FACILITIES = [
   'OWN'
 ];
 const COVERAGE_ABC_CLASSES = ['A', 'B', 'C', 'Unclassified'];
+const LATEST_COVERAGE_ABC_PROPERTY = 'LATEST_COVERAGE_ABC_OPENING_V1';
 const INVENTORY_EXPORT_FACILITY_MAP = {
   'SL AMBIENT': 'SL_AMBIENT',
   'SL MOTHER HUB': 'SL_MH',
@@ -3669,15 +3670,46 @@ function repairLatestCoverageAbcOpeningIfMissing_(spreadsheet, sheet) {
     },
     0
   );
+  const latestDate = normalizeDate_(
+    latestRow[indexes.Date],
+    getTimeZone_()
+  );
 
-  if (totalGoodQuantity <= 0 || storedAbcTotal > 0) {
+  if (totalGoodQuantity <= 0) {
     return false;
+  }
+
+  if (Math.abs(storedAbcTotal - totalGoodQuantity) <= 0.01) {
+    saveLatestCoverageAbcOpening_(
+      latestDate,
+      coverageAbcOpeningFromRow_(latestRow, indexes),
+      totalGoodQuantity,
+      latestRow[indexes['ABC Mapping Signature']]
+    );
+    return false;
+  }
+
+  const savedOpening = getSavedLatestCoverageAbcOpening_(
+    latestDate,
+    totalGoodQuantity
+  );
+  if (savedOpening) {
+    applyCoverageAbcOpeningToRow_(latestRow, indexes, savedOpening.quantities);
+    latestRow[indexes['ABC Mapping Signature']] = savedOpening.signature;
+    sheet
+      .getRange(latestRowNumber, 1, 1, headers.length)
+      .setValues([latestRow]);
+    console.log(
+      'Restored the latest ABC opening split for ' + latestDate +
+        ' from the protected copy.'
+    );
+    return true;
   }
 
   const abcClassMap = readAbcClassMap_(spreadsheet);
   const records = [{
     row: latestRow,
-    date: normalizeDate_(latestRow[indexes.Date], getTimeZone_())
+    date: latestDate
   }];
   const repaired = refreshLatestCoverageAbcOpening_(
     records,
@@ -3709,10 +3741,106 @@ function repairLatestCoverageAbcOpeningIfMissing_(spreadsheet, sheet) {
   sheet
     .getRange(latestRowNumber, 1, 1, headers.length)
     .setValues([latestRow]);
+  saveLatestCoverageAbcOpening_(
+    latestDate,
+    coverageAbcOpeningFromRow_(latestRow, indexes),
+    totalGoodQuantity,
+    latestRow[indexes['ABC Mapping Signature']]
+  );
   console.log(
     'Repaired the latest ABC opening split for ' + records[0].date + '.'
   );
   return true;
+}
+
+/** Returns the four stored opening quantities from one coverage row. */
+function coverageAbcOpeningFromRow_(row, indexes) {
+  const quantities = emptyCoverageAbcNumberMap_();
+  COVERAGE_ABC_CLASSES.forEach(function (abcClass) {
+    quantities[abcClass] = round_(
+      toNumber_(row[indexes[abcClass + ' Good Qty']]),
+      2
+    );
+  });
+  return quantities;
+}
+
+/** Writes an A/B/C opening split into one in-memory coverage row. */
+function applyCoverageAbcOpeningToRow_(row, indexes, quantities) {
+  COVERAGE_ABC_CLASSES.forEach(function (abcClass) {
+    row[indexes[abcClass + ' Good Qty']] = round_(
+      toNumber_(quantities && quantities[abcClass]),
+      2
+    );
+  });
+}
+
+/** Saves one small protected copy so a stale trigger cannot erase the split. */
+function saveLatestCoverageAbcOpening_(
+  date,
+  quantities,
+  totalGoodQuantity,
+  signature
+) {
+  const safeDate = cleanText_(date);
+  const safeTotal = round_(toNumber_(totalGoodQuantity), 2);
+  const safeQuantities = emptyCoverageAbcNumberMap_();
+  let splitTotal = 0;
+
+  COVERAGE_ABC_CLASSES.forEach(function (abcClass) {
+    safeQuantities[abcClass] = round_(
+      toNumber_(quantities && quantities[abcClass]),
+      2
+    );
+    splitTotal += safeQuantities[abcClass];
+  });
+
+  if (
+    !safeDate ||
+    safeTotal <= 0 ||
+    Math.abs(splitTotal - safeTotal) > 0.01
+  ) {
+    return false;
+  }
+
+  PropertiesService.getScriptProperties().setProperty(
+    LATEST_COVERAGE_ABC_PROPERTY,
+    JSON.stringify({
+      date: safeDate,
+      totalGoodQuantity: safeTotal,
+      quantities: safeQuantities,
+      signature: cleanText_(signature),
+      savedAt: new Date().toISOString()
+    })
+  );
+  return true;
+}
+
+/** Reads the protected split only when its date and total match exactly. */
+function getSavedLatestCoverageAbcOpening_(date, totalGoodQuantity) {
+  const storedText = PropertiesService.getScriptProperties().getProperty(
+    LATEST_COVERAGE_ABC_PROPERTY
+  );
+  if (!storedText) {
+    return null;
+  }
+
+  try {
+    const stored = JSON.parse(storedText);
+    if (
+      cleanText_(stored.date) !== cleanText_(date) ||
+      Math.abs(
+        toNumber_(stored.totalGoodQuantity) -
+          toNumber_(totalGoodQuantity)
+      ) > 0.01
+    ) {
+      return null;
+    }
+    return stored;
+  } catch (error) {
+    console.warn('The protected ABC opening copy could not be read.');
+    return null;
+  }
 }
 
 /** Aggregates counted System Quantity by transaction date and ABC class. */
@@ -4005,6 +4133,7 @@ function upsertCycleCoverageSnapshot_(sheet, snapshot) {
   let targetRow = sheet.getLastRow() + 1;
   let inserted = true;
   let priorMessageIds = '';
+  let existingRow = null;
 
   if (sheet.getLastRow() > 1) {
     const existingValues = sheet
@@ -4019,11 +4148,39 @@ function upsertCycleCoverageSnapshot_(sheet, snapshot) {
       if (existingDate === snapshot.reportDate) {
         targetRow = index + 2;
         inserted = false;
+        existingRow = existingValues[index];
         priorMessageIds = cleanText_(
           existingValues[index][indexes['Gmail Message ID']]
         );
         break;
       }
+    }
+  }
+
+  const incomingAbcTotal = COVERAGE_ABC_CLASSES.reduce(
+    function (total, abcClass) {
+      return total + toNumber_(row[indexes[abcClass + ' Good Qty']]);
+    },
+    0
+  );
+  if (existingRow && incomingAbcTotal <= 0 && totalGood > 0) {
+    const existingAbcTotal = COVERAGE_ABC_CLASSES.reduce(
+      function (total, abcClass) {
+        return total + toNumber_(
+          existingRow[indexes[abcClass + ' Good Qty']]
+        );
+      },
+      0
+    );
+    if (Math.abs(existingAbcTotal - totalGood) <= 0.01) {
+      applyCoverageAbcOpeningToRow_(
+        row,
+        indexes,
+        coverageAbcOpeningFromRow_(existingRow, indexes)
+      );
+      row[indexes['ABC Mapping Signature']] = cleanText_(
+        existingRow[indexes['ABC Mapping Signature']]
+      );
     }
   }
 
@@ -4035,6 +4192,12 @@ function upsertCycleCoverageSnapshot_(sheet, snapshot) {
   }
   row[indexes['Gmail Message ID']] = messageIds.filter(Boolean).join(',');
   sheet.getRange(targetRow, 1, 1, headers.length).setValues([row]);
+  saveLatestCoverageAbcOpening_(
+    snapshot.reportDate,
+    coverageAbcOpeningFromRow_(row, indexes),
+    totalGood,
+    row[indexes['ABC Mapping Signature']]
+  );
 
   if (sheet.getLastRow() > 2) {
     sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length)
@@ -4123,8 +4286,10 @@ function readCycleCoverageRecords_(sheet) {
       2
     );
 
+    const recordDate = normalizeDate_(row[indexes.Date], getTimeZone_());
+
     return {
-      date: normalizeDate_(row[indexes.Date], getTimeZone_()),
+      date: recordDate,
       facilities: facilities,
       totalGoodQuantity: totalGoodQuantity,
       totalDailyCountedQuantity: round_(
@@ -4152,7 +4317,8 @@ function readCycleCoverageRecords_(sheet) {
         row,
         indexes,
         totalGoodQuantity,
-        totalCumulativeCountedQuantity
+        totalCumulativeCountedQuantity,
+        recordDate
       )
     };
   }).filter(function (record) {
@@ -4167,9 +4333,10 @@ function buildCoverageAbcBreakdown_(
   row,
   indexes,
   totalGoodQuantity,
-  totalCumulativeCountedQuantity
+  totalCumulativeCountedQuantity,
+  recordDate
 ) {
-  const classTotals = COVERAGE_ABC_CLASSES.map(function (abcClass) {
+  let classTotals = COVERAGE_ABC_CLASSES.map(function (abcClass) {
     return {
       abcClass: abcClass,
       openingGoodQuantity: round_(
@@ -4186,6 +4353,25 @@ function buildCoverageAbcBreakdown_(
       )
     };
   });
+  const storedOpeningTotal = classTotals.reduce(function (total, item) {
+    return total + item.openingGoodQuantity;
+  }, 0);
+
+  if (storedOpeningTotal <= 0 && totalGoodQuantity > 0) {
+    const protectedOpening = getSavedLatestCoverageAbcOpening_(
+      recordDate,
+      totalGoodQuantity
+    );
+    if (protectedOpening) {
+      classTotals = classTotals.map(function (item) {
+        item.openingGoodQuantity = round_(
+          toNumber_(protectedOpening.quantities[item.abcClass]),
+          2
+        );
+        return item;
+      });
+    }
+  }
 
   return calculateCoverageAbcBreakdown_(
     classTotals,

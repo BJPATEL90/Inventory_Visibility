@@ -1411,6 +1411,9 @@ export default function App() {
     queryKey: ['cycleCoverage', coverageMonth],
     queryFn: () => getCycleCoverage(coverageMonth),
     initialData: coverageMonth ? undefined : getCachedCycleCoverage,
+    // Cached coverage paints the page quickly, then this forces an immediate
+    // live check so a repaired A/B/C split never remains on screen as zero.
+    initialDataUpdatedAt: 0,
     enabled:
       Boolean(signedInUser) &&
       (activePage === 'kpi' || activePage === 'facilityProgress'),

@@ -567,6 +567,10 @@ export function CalculationLogicPage({
             {
               title: 'Quarter CSV attachment',
               text: 'The email attaches dated transactions from the first day of the reporting date’s calendar quarter through the reporting date. Undated rows are excluded.'
+            },
+            {
+              title: 'Dashboard CSV downloads',
+              text: 'Yesterday CSV exports the previous calendar date. MTD CSV starts on the first of the month, and Quarter CSV starts on the first of the calendar quarter.'
             }
           ].map((item) => (
             <article

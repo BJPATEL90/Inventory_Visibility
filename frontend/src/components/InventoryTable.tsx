@@ -221,7 +221,8 @@ export function InventoryTable({
               Inventory Transactions
             </h3>
             <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-              Download the selected day, month-to-date, or quarter-to-date.
+              Download yesterday's completed transactions, month-to-date, or
+              quarter-to-date.
             </p>
           </div>
         </div>
@@ -243,7 +244,7 @@ export function InventoryTable({
           </label>
           <div className="flex flex-wrap gap-2">
             {([
-              ['daily', 'Daily CSV'],
+              ['daily', 'Yesterday CSV'],
               ['mtd', 'MTD CSV'],
               ['quarterly', 'Quarter CSV']
             ] as Array<[TransactionCsvPeriod, string]>).map(([period, label]) => (

@@ -80,15 +80,25 @@ type DashboardPage =
   | 'facilityProgress'
   | 'calculationLogic';
 
-/** Builds a daily, month-to-date, or quarter-to-date range around one date. */
+/** Builds a yesterday, month-to-date, or quarter-to-date CSV range. */
 function csvPeriodRange(period: TransactionCsvPeriod, referenceDate: string) {
   const match = referenceDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!match || period === 'daily') {
+  if (!match) {
     return { startDate: referenceDate, endDate: referenceDate };
   }
 
   const year = Number(match[1]);
   const month = Number(match[2]);
+  const day = Number(match[3]);
+
+  // The dashboard's daily download represents the last completed date.
+  if (period === 'daily') {
+    const yesterday = new Date(Date.UTC(year, month - 1, day));
+    yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+    const yesterdayIso = yesterday.toISOString().slice(0, 10);
+    return { startDate: yesterdayIso, endDate: yesterdayIso };
+  }
+
   const startMonth = period === 'mtd'
     ? month
     : Math.floor((month - 1) / 3) * 3 + 1;
@@ -1701,7 +1711,13 @@ export default function App() {
   }
 
   async function exportTransactionsCsv(period: TransactionCsvPeriod) {
-    const referenceDate = filters.date || transactionEndDate;
+    // Yesterday is based on the current dashboard reporting date, even when
+    // the transaction table is temporarily filtered to a different date.
+    const currentReportingDate =
+      monthToDatePeriod?.endDate || transactionEndDate;
+    const referenceDate = period === 'daily'
+      ? currentReportingDate
+      : filters.date || transactionEndDate;
     const range = csvPeriodRange(period, referenceDate);
     setExportingCsvPeriod(period);
 
@@ -1718,7 +1734,8 @@ export default function App() {
       const link = document.createElement('a');
 
       link.href = downloadUrl;
-      link.download = `inventory-transactions-${period}-${range.startDate}-to-${range.endDate}.csv`;
+      const periodName = period === 'daily' ? 'yesterday' : period;
+      link.download = `inventory-transactions-${periodName}-${range.startDate}-to-${range.endDate}.csv`;
       document.body.appendChild(link);
       link.click();
       link.remove();

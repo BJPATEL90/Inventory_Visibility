@@ -1436,9 +1436,14 @@ export default function App() {
 
   const dashboard = dashboardQuery.data?.data;
   const config = configQuery.data?.data;
-  const period = dashboard?.periods.monthToDate;
-  const transactionStartDate = filters.date || period?.startDate || '';
-  const transactionEndDate = filters.date || period?.endDate || '';
+  const monthToDatePeriod = dashboard?.periods.monthToDate;
+  const period = monthToDatePeriod;
+  const executivePeriod =
+    dashboard?.periods.currentQuarterToDate || monthToDatePeriod;
+  const transactionStartDate =
+    filters.date || monthToDatePeriod?.startDate || '';
+  const transactionEndDate =
+    filters.date || monthToDatePeriod?.endDate || '';
   const transactionParameters: TransactionQuery = {
     startDate: transactionStartDate,
     endDate: transactionEndDate,
@@ -1519,10 +1524,10 @@ export default function App() {
     remarks: []
   };
   const visibleKpis = activePage === 'kpi'
-    ? dashboard?.periods.monthToDate.kpis || null
+    ? executivePeriod?.kpis || null
     : transactionPage?.kpis || null;
   const selectedRowCount = activePage === 'kpi'
-    ? dashboard?.periods.monthToDate.rowCount || 0
+    ? executivePeriod?.rowCount || 0
     : transactionPage?.selectedRowCount || 0;
   const bannerPeriods = dashboard?.periods;
   const selectedAbcPeriodData =
@@ -1919,7 +1924,7 @@ export default function App() {
               <div>
                 <p className="text-sm font-semibold text-blue-700 dark:text-blue-300">
                   Section 1 ·{' '}
-                  {period?.label}
+                  {executivePeriod?.label}
                 </p>
                 <h2 className="mt-1 text-xl font-bold tracking-tight">
                   Executive KPI
@@ -1929,7 +1934,7 @@ export default function App() {
                     ? 'Loading the selected transaction summary...'
                     : filtersAreActive
                     ? `${formatNumber(selectedRowCount)} matching rows`
-                    : `${formatNumber(selectedRowCount)} Month-to-Date rows`}
+                    : `${formatNumber(selectedRowCount)} Quarter-to-Date rows`}
                 </p>
               </div>
               <span className="inline-flex w-fit items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
@@ -1985,7 +1990,7 @@ export default function App() {
             ) : visibleKpis ? (
               <KpiGrid
                 kpis={visibleKpis}
-                accuracyLabel="MTD Inventory Accuracy"
+                accuracyLabel="QTD Inventory Accuracy"
               />
             ) : null}
               </>

@@ -380,6 +380,7 @@ export function CalculationLogicPage({
             {[
               ['Last Quarter', 'Previous completed calendar quarter. For Jul–Sep 2026, this is Apr–Jun 2026 and is supplied by Q1-AMJ26.'],
               ['Last Month', 'First through last date of the previous completed calendar month. It changes automatically when the month changes.'],
+              ['Current Quarter to Date', 'First date of the current quarter through today. This period drives the lower Executive KPI cards and includes current undated NTF rows.'],
               ['Month to Date', 'First date of the current month through today. Current undated NTF rows are also included in MTD.'],
               ['Yesterday', 'The previous calendar date in Asia/Kolkata time. If it has no rows, Activity_Status supplies the reason and remark.'],
               ['Date filter', 'The transaction page sends the selected start and end date to Apps Script; table rows and transaction KPI summary use that exact range.']

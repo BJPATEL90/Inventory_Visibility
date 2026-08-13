@@ -1,6 +1,7 @@
 export type PeriodKey =
   | 'lastQuarter'
   | 'lastMonth'
+  | 'currentQuarterToDate'
   | 'monthToDate'
   | 'yesterday';
 

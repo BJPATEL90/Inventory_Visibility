@@ -5005,7 +5005,7 @@ function testMasters() {
 }
 
 /**
- * Builds the Last Quarter, Last Month, Month to Date, and Yesterday summary.
+ * Builds the four banner periods plus the current quarter-to-date summary.
  */
 function buildDashboard_(optionalInventoryData, optionalFilters) {
   const config = getConfig();
@@ -5027,7 +5027,8 @@ function buildDashboard_(optionalInventoryData, optionalFilters) {
         row.date >= range.startDate &&
         row.date <= range.endDate;
       const isCurrentUndatedNtf =
-        periodKey === 'monthToDate' &&
+        (periodKey === 'monthToDate' ||
+          periodKey === 'currentQuarterToDate') &&
         row.sourceType === 'current' &&
         !row.date &&
         isNtfRow_(row);
@@ -5387,7 +5388,7 @@ function formatSignedEmailPercent_(value) {
 }
 
 /**
- * Creates the four fixed reporting date ranges using the script time zone.
+ * Creates the dashboard reporting date ranges using the script time zone.
  */
 function reportingRanges_() {
   const todayText = Utilities.formatDate(
@@ -5423,6 +5424,14 @@ function reportingRanges_() {
   );
   const currentQuarterStartMonth =
     Math.floor(today.getMonth() / 3) * 3;
+  const currentQuarterStart = new Date(
+    today.getFullYear(),
+    currentQuarterStartMonth,
+    1,
+    12,
+    0,
+    0
+  );
   const lastQuarterStart = new Date(
     today.getFullYear(),
     currentQuarterStartMonth - 3,
@@ -5450,6 +5459,11 @@ function reportingRanges_() {
       label: 'Last Month',
       startDate: formatDate_(lastMonthStart),
       endDate: formatDate_(lastMonthEnd)
+    },
+    currentQuarterToDate: {
+      label: 'Current Quarter to Date',
+      startDate: formatDate_(currentQuarterStart),
+      endDate: formatDate_(today)
     },
     monthToDate: {
       label: 'Month to Date',

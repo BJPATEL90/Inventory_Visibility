@@ -815,6 +815,27 @@ function QuantityAccuracyBanner({
                       {formatNumber(period.kpis.physicalQuantity)}
                     </strong>
                   </p>
+                  <p className="flex items-center justify-between gap-2 text-slate-600">
+                    <span className="font-medium">Short Qty</span>
+                    <strong className="text-right text-slate-900">
+                      {formatNumber(period.kpis.shortQuantity)}
+                    </strong>
+                  </p>
+                  <p className="flex items-center justify-between gap-2 text-slate-600">
+                    <span className="font-medium">Excess Qty</span>
+                    <strong className="text-right text-slate-900">
+                      {formatNumber(period.kpis.excessQuantity)}
+                    </strong>
+                  </p>
+                  <p className="flex items-center justify-between gap-2 border-t border-slate-100 pt-1 text-slate-700">
+                    <span className="font-bold">Absolute Variance</span>
+                    <strong className="text-right text-slate-950">
+                      {formatNumber(
+                        period.kpis.shortQuantity +
+                          period.kpis.excessQuantity
+                      )}
+                    </strong>
+                  </p>
                 </div>
                 <p className="mt-2 text-xs text-slate-500">
                   {period.startDate} to {period.endDate}
@@ -898,7 +919,7 @@ function AbcBreakdownPanel({
         </div>
       </div>
 
-      <div className="mt-5 grid gap-5 2xl:grid-cols-2">
+      <div className="mt-5 grid gap-5">
         <AbcQuantityTable rows={rows} />
         <AbcValueTable rows={rows} />
       </div>
@@ -939,7 +960,7 @@ function AbcQuantityTable({ rows }: { rows: AbcBreakdownRow[] }) {
   return (
     <AbcTableShell
       title="Quantity view"
-      description="How much system quantity was selected and physically captured."
+      description="Accuracy uses Absolute Variance = Short Qty + Excess Qty. Net Difference is shown separately."
     >
       <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500 dark:bg-slate-950 dark:text-slate-400">
         <tr>
@@ -947,7 +968,10 @@ function AbcQuantityTable({ rows }: { rows: AbcBreakdownRow[] }) {
           <th className="px-3 py-3 text-right">Unique SKUs</th>
           <th className="px-3 py-3 text-right">System Qty</th>
           <th className="px-3 py-3 text-right">Physical Qty</th>
-          <th className="px-3 py-3 text-right">Difference</th>
+          <th className="px-3 py-3 text-right">Short Qty</th>
+          <th className="px-3 py-3 text-right">Excess Qty</th>
+          <th className="px-3 py-3 text-right">Absolute Variance</th>
+          <th className="px-3 py-3 text-right">Net Difference</th>
           <th className="px-3 py-3 text-right">Accuracy</th>
         </tr>
       </thead>
@@ -974,6 +998,23 @@ function AbcQuantityTable({ rows }: { rows: AbcBreakdownRow[] }) {
               {formatNumber(row.physicalQuantity)}
             </td>
             <td className="px-3 py-3 text-right">
+              {formatNumber(row.shortQuantity ?? 0)}
+            </td>
+            <td className="px-3 py-3 text-right">
+              {formatNumber(row.excessQuantity ?? 0)}
+            </td>
+            <td className="px-3 py-3 text-right font-bold text-slate-950 dark:text-white">
+              {formatNumber(
+                row.absoluteDifferenceQuantity ??
+                  Math.max(
+                    0,
+                    row.systemQuantity *
+                      (100 - row.quantityAccuracy) /
+                      100
+                  )
+              )}
+            </td>
+            <td className="px-3 py-3 text-right">
               {formatNumber(row.differenceQuantity)}
             </td>
             <td
@@ -993,7 +1034,7 @@ function AbcValueTable({ rows }: { rows: AbcBreakdownRow[] }) {
   return (
     <AbcTableShell
       title="COGS value view"
-      description="The same class capture measured at unit cost excluding GST."
+      description="Value accuracy uses Absolute Variance Value = Short Value + Excess Value."
     >
       <thead className="bg-emerald-50 text-xs uppercase tracking-wide text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">
         <tr>
@@ -1001,7 +1042,10 @@ function AbcValueTable({ rows }: { rows: AbcBreakdownRow[] }) {
           <th className="px-3 py-3 text-right">Costed SKUs</th>
           <th className="px-3 py-3 text-right">System Value</th>
           <th className="px-3 py-3 text-right">Physical Value</th>
-          <th className="px-3 py-3 text-right">Difference</th>
+          <th className="px-3 py-3 text-right">Short Value</th>
+          <th className="px-3 py-3 text-right">Excess Value</th>
+          <th className="px-3 py-3 text-right">Absolute Variance</th>
+          <th className="px-3 py-3 text-right">Net Difference</th>
           <th className="px-3 py-3 text-right">Accuracy</th>
           <th className="px-3 py-3 text-right">Coverage</th>
         </tr>
@@ -1027,6 +1071,21 @@ function AbcValueTable({ rows }: { rows: AbcBreakdownRow[] }) {
             </td>
             <td className="px-3 py-3 text-right">
               {formatCurrency(row.physicalValue)}
+            </td>
+            <td className="px-3 py-3 text-right">
+              {formatCurrency(row.shortValue ?? 0)}
+            </td>
+            <td className="px-3 py-3 text-right">
+              {formatCurrency(row.excessValue ?? 0)}
+            </td>
+            <td className="px-3 py-3 text-right font-bold text-slate-950 dark:text-white">
+              {formatCurrency(
+                row.absoluteDifferenceValue ??
+                  Math.max(
+                    0,
+                    row.systemValue * (100 - row.valueAccuracy) / 100
+                  )
+              )}
             </td>
             <td className="px-3 py-3 text-right">
               {formatCurrency(row.differenceValue)}
@@ -1067,7 +1126,7 @@ function AbcTableShell({
         </p>
       </div>
       <div className="overflow-x-auto">
-        <table className="min-w-full whitespace-nowrap text-sm">
+        <table className="min-w-[1180px] whitespace-nowrap text-sm">
           {children}
         </table>
       </div>
@@ -1149,6 +1208,12 @@ function ValueAccuracyBanner({
                   </strong>
                 </p>
                 <p className="flex items-center justify-between gap-2 text-slate-600">
+                  <span className="font-medium">Absolute Variance</span>
+                  <strong className="text-right text-slate-900">
+                    {formatCurrency(absoluteDifferenceValue)}
+                  </strong>
+                </p>
+                <p className="flex items-center justify-between gap-2 text-slate-600">
                   <span className="font-medium">Cost Coverage</span>
                   <strong className="text-right text-slate-900">
                     {formatPercent(period.kpis.costCoverage)}
@@ -1222,7 +1287,13 @@ function YesterdayActivityNotice({
   );
 }
 
-function KpiGrid({ kpis }: { kpis: Kpis }) {
+function KpiGrid({
+  kpis,
+  accuracyLabel = 'Inventory Accuracy'
+}: {
+  kpis: Kpis;
+  accuracyLabel?: string;
+}) {
   const completionStyle = getAccuracyStyle(
     kpis.cycleCountCompletion
   );
@@ -1262,11 +1333,22 @@ function KpiGrid({ kpis }: { kpis: Kpis }) {
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
       <KpiCard
-        label="Inventory Accuracy"
+        label={accuracyLabel}
         value={formatPercent(kpis.inventoryAccuracy)}
-        description="Accuracy based on total absolute quantity difference."
+        description={`100 − (${formatNumber(
+          kpis.shortQuantity + kpis.excessQuantity
+        )} ÷ ${formatNumber(kpis.systemQuantity)} × 100)`}
         icon={Gauge}
         tone={accuracyTone(kpis.inventoryAccuracyStyle.name)}
+        notice={{
+          label: 'Absolute Variance',
+          value: formatNumber(
+            kpis.shortQuantity + kpis.excessQuantity
+          ),
+          description: `Short ${formatNumber(
+            kpis.shortQuantity
+          )} + Excess ${formatNumber(kpis.excessQuantity)}`
+        }}
       />
       <KpiCard
         label="System Qty and Value"
@@ -1901,7 +1983,10 @@ export default function App() {
                 </p>
               </div>
             ) : visibleKpis ? (
-              <KpiGrid kpis={visibleKpis} />
+              <KpiGrid
+                kpis={visibleKpis}
+                accuracyLabel="MTD Inventory Accuracy"
+              />
             ) : null}
               </>
             ) : null}
@@ -1924,7 +2009,10 @@ export default function App() {
               </div>
               {visibleKpis && selectedRowCount > 0 ? (
                 <div className="mb-8">
-                  <KpiGrid kpis={visibleKpis} />
+                  <KpiGrid
+                    kpis={visibleKpis}
+                    accuracyLabel="Selected Period Inventory Accuracy"
+                  />
                 </div>
               ) : null}
               {transactionErrorMessage ? (

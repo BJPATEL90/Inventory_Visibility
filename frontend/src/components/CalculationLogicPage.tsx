@@ -138,6 +138,12 @@ export function CalculationLogicPage({
         'Adds Phy after NTF normalization. An NTF row is treated as Physical Quantity 0.'
     },
     {
+      name: 'Absolute Variance',
+      formula: 'Short Quantity + Excess Quantity',
+      explanation:
+        'This is the exact numerator used for Inventory Accuracy. Net Difference is shown separately and is not used for accuracy.'
+    },
+    {
       name: 'Net Difference',
       formula: 'Physical Quantity − System Quantity',
       explanation:
@@ -319,7 +325,7 @@ export function CalculationLogicPage({
                 ['External cycle counts', 'Bin wise cycle Count-Q2-JAS: OWN and B2C', 'OWN plus B2C facilities SL_MM, SL_LJ, and SL_BW'],
                 ['Historical cycle counts', 'Inventory_Dashboard: Q1-AMJ26', 'Last Quarter and past-date reporting'],
                 ['Unit cost', 'Inventory_Dashboard: COGS', 'Value KPIs at unit rate excluding GST'],
-                ['SKU classification', 'Inventory_Dashboard: SKU_MASTER', 'A, B, C, and Unclassified drill-down'],
+                ['SKU classification', 'Inventory_Dashboard: SKU_MASTER', 'A, B, and C drill-down; missing or invalid classes default to C'],
                 ['No-activity explanation', 'Inventory_Dashboard: Activity_Status', 'Reason and remark when a reporting date has no count'],
                 ['Opening GOOD inventory', 'Latest approved Unicommerce email CSV', 'Daily denominator for facility and overall quantity coverage'],
                 ['Stored coverage history', 'Hidden Cycle_Coverage_System', 'Daily opening, counted, cumulative, completion, and inventory change']
@@ -412,7 +418,7 @@ export function CalculationLogicPage({
             <li className="rounded-lg border border-slate-200 p-3 dark:border-slate-800">
               <strong className="text-slate-950 dark:text-white">ABC Class:</strong>{' '}
               SKU codes are matched case-insensitively to SKU_MASTER. Missing
-              matches appear as Unclassified.
+              or invalid matches are assigned to C by default.
             </li>
             <li className="rounded-lg border border-slate-200 p-3 dark:border-slate-800">
               <strong className="text-slate-950 dark:text-white">Negative display:</strong>{' '}
@@ -457,8 +463,8 @@ export function CalculationLogicPage({
             },
             {
               name: 'ABC pending contribution',
-              formula: 'Remaining class share allocated to 100% - Overall Coverage',
-              text: 'A, B, and C pending contributions reconcile to the remaining coverage, so completed plus pending always equals 100%.'
+              formula: 'max(Class Opening GOOD Qty - Class Cumulative Counted Qty, 0)',
+              text: 'Each class pending quantity is calculated first. Its share of total opening inventory gives the pending contribution; completed plus pending reconciles to 100%.'
             },
             {
               name: 'Inventory change',

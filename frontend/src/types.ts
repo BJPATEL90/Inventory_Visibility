@@ -62,11 +62,17 @@ export interface AbcBreakdownRow {
   costedRowCount: number;
   systemQuantity: number;
   physicalQuantity: number;
+  shortQuantity: number;
+  excessQuantity: number;
+  absoluteDifferenceQuantity: number;
   differenceQuantity: number;
   quantityAccuracy: number;
   quantityAccuracyStyle: AccuracyStyle;
   systemValue: number;
   physicalValue: number;
+  shortValue: number;
+  excessValue: number;
+  absoluteDifferenceValue: number;
   differenceValue: number;
   valueAccuracy: number;
   valueAccuracyStyle: AccuracyStyle;

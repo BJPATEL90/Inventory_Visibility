@@ -1393,6 +1393,11 @@ function calculateAbcBreakdown(inventoryRows) {
     bucket.systemQuantity += systemQuantity;
     bucket.physicalQuantity += physicalQuantity;
     bucket.absoluteDifference += Math.abs(difference);
+    if (difference < 0) {
+      bucket.shortQuantity += Math.abs(difference);
+    } else if (difference > 0) {
+      bucket.excessQuantity += difference;
+    }
 
     if (unitCost !== null && unitCost >= 0) {
       bucket.costedRowCount += 1;
@@ -1402,6 +1407,11 @@ function calculateAbcBreakdown(inventoryRows) {
       bucket.systemValue += systemQuantity * unitCost;
       bucket.physicalValue += physicalQuantity * unitCost;
       bucket.absoluteDifferenceValue += Math.abs(difference) * unitCost;
+      if (difference < 0) {
+        bucket.shortValue += Math.abs(difference) * unitCost;
+      } else if (difference > 0) {
+        bucket.excessValue += difference * unitCost;
+      }
     }
   });
 
@@ -6293,9 +6303,13 @@ function newAbcBucket_(abcClass) {
     systemQuantity: 0,
     physicalQuantity: 0,
     absoluteDifference: 0,
+    shortQuantity: 0,
+    excessQuantity: 0,
     systemValue: 0,
     physicalValue: 0,
-    absoluteDifferenceValue: 0
+    absoluteDifferenceValue: 0,
+    shortValue: 0,
+    excessValue: 0
   };
 }
 
@@ -6400,9 +6414,13 @@ function mergeAbcBucket_(target, source) {
   target.systemQuantity += source.systemQuantity;
   target.physicalQuantity += source.physicalQuantity;
   target.absoluteDifference += source.absoluteDifference;
+  target.shortQuantity += source.shortQuantity;
+  target.excessQuantity += source.excessQuantity;
   target.systemValue += source.systemValue;
   target.physicalValue += source.physicalValue;
   target.absoluteDifferenceValue += source.absoluteDifferenceValue;
+  target.shortValue += source.shortValue;
+  target.excessValue += source.excessValue;
 }
 
 /** Converts an internal ABC accumulator into the small API response row. */
@@ -6427,6 +6445,9 @@ function finishAbcBucket_(bucket) {
     costedRowCount: bucket.costedRowCount,
     systemQuantity: round_(bucket.systemQuantity, 2),
     physicalQuantity: round_(bucket.physicalQuantity, 2),
+    shortQuantity: round_(bucket.shortQuantity, 2),
+    excessQuantity: round_(bucket.excessQuantity, 2),
+    absoluteDifferenceQuantity: round_(bucket.absoluteDifference, 2),
     differenceQuantity: round_(
       bucket.physicalQuantity - bucket.systemQuantity,
       2
@@ -6435,6 +6456,9 @@ function finishAbcBucket_(bucket) {
     quantityAccuracyStyle: getAccuracyStyle(quantityAccuracy),
     systemValue: round_(bucket.systemValue, 2),
     physicalValue: round_(bucket.physicalValue, 2),
+    shortValue: round_(bucket.shortValue, 2),
+    excessValue: round_(bucket.excessValue, 2),
+    absoluteDifferenceValue: round_(bucket.absoluteDifferenceValue, 2),
     differenceValue: round_(
       bucket.physicalValue - bucket.systemValue,
       2

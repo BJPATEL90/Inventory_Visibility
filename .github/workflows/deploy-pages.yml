@@ -47,7 +47,7 @@ jobs:
       - name: Build frontend
         working-directory: frontend
         env:
-          VITE_APPS_SCRIPT_URL: https://script.google.com/macros/s/AKfycbzb3RLplMSuW6BcKVCo7HG4Jbd62qEkRF0gjMCjSrpn7F15iZKbqRSD9u_YKjEIa9HFNQ/exec
+          VITE_APPS_SCRIPT_URL: https://script.google.com/a/macros/mosaicwellness.in/s/AKfycbzb3RLplMSuW6BcKVCo7HG4Jbd62qEkRF0gjMCjSrpn7F15iZKbqRSD9u_YKjEIa9HFNQ/exec
           VITE_GOOGLE_CLIENT_ID: 1021762366002-nsjs0p1e38ilkm3cogaagu03kdbm0s32.apps.googleusercontent.com
           VITE_GOOGLE_ALLOWED_DOMAIN: mosaicwellness.in
         run: npm run build

@@ -36,11 +36,12 @@ they provide the rollback source if a production issue is found.
 V2 adds four separate frontend pages using a left navigation panel:
 
 1. **Executive KPI** - the landing page contains KPI cards only. Clicking a
-   four-period accuracy card can still open its ABC detail.
-2. **Inventory Transactions** - date/facility filters, detailed KPIs, search,
-   sorting, pagination, and CSV download.
-3. **Facility MTD Progress** - facility cards, a 0%-100% progress bar, opening
+   four-period accuracy card opens its ABC detail. The overall coverage banner
+   can also expand to show completed and pending A/B/C contributions.
+2. **Facility MTD Progress** - facility cards, a 0%-100% progress bar, opening
    GOOD quantity, cumulative counted quantity, and a day-wise MTD table.
+3. **Inventory Transactions** - date/facility filters, detailed KPIs, search,
+   sorting, pagination, and separate Yesterday, MTD, and Quarter CSV downloads.
 4. **Calculation Logic** - read-only documentation of data sources, reporting
    periods, KPI formulas, special NTF/COGS rules, coverage calculations,
    colour thresholds, skipped rows, refreshes, emails, and CSV publication.
@@ -166,6 +167,8 @@ the production project:
    permissions, then check the execution log.
 5. Run `testCycleCoverageApi()` - confirm the MTD dates, facility totals, and
    completion percentages returned to the frontend.
+6. Run `testCycleCoverageAbcContributions()` - confirm completed and pending
+   A/B/C quantities and percentages reconcile to 100%.
 
 Run `removeCycleCoverageV2Trigger()` if the isolated test should stop checking
 Gmail. This removes only the V2 inventory-import trigger from that test project.
@@ -176,11 +179,11 @@ The current frontend contains four visible pages:
 
 1. **Executive KPI**, including quantity coverage, four-period quantity and
    COGS accuracy, ABC Class details, and KPI cards.
-2. **Inventory Transactions**, including Date and Facility filters, search,
-   sorting, pagination, and CSV download.
-3. **Facility MTD Progress**, including facility coverage cards and the
+2. **Facility MTD Progress**, including facility coverage cards and the
    day-wise opening inventory, counted quantity, completion, and inventory
    movement table.
+3. **Inventory Transactions**, including Date and Facility filters, search,
+   sorting, pagination, and Yesterday/MTD/Quarter CSV downloads.
 4. **Calculation Logic**, including the formulas and publishing rules used by
    the production Apps Script and React dashboard.
 
@@ -193,9 +196,10 @@ The filter bar currently contains only:
 - Facility
 - Clear filters
 
-The Date filter changes the detailed KPI cards and transaction table
-for the selected day. The Facility filter limits the same details and
-recalculates the four-period comparison for that facility.
+The Date and Facility filters appear only on the Inventory Transactions page.
+The Date filter changes the transaction KPI cards and table to the selected
+day. The Facility filter limits those same transaction details. These filters
+do not change the fixed comparison ribbons on the Executive KPI page.
 
 The two comparison ribbons always show these fixed calendar periods:
 
@@ -206,17 +210,48 @@ The two comparison ribbons always show these fixed calendar periods:
 
 They are comparison periods, not filter buttons.
 
+Apps Script also calculates a separate **Current Quarter to Date** period. It
+does not replace any of the four ribbon cards; it drives the detailed KPI cards
+on the Executive KPI landing page.
+
 ## Dashboard layout
+
+### Overall Quantity Coverage
+
+The first banner on the Executive KPI page shows:
+
+- Overall quarter quantity coverage
+- Latest opening `GOOD_INVENTORY` quantity
+- Cumulative counted System Quantity
+- Quantity counted on the latest date
+- Opening inventory change percentage versus the previous day
+- A 0%-100% progress line
+
+Use **Show ABC details** to expand the banner. The table shows completed
+quantity and percentage, pending quantity and percentage, and the reconciled
+total for Classes A, B, and C.
+
+```text
+Pending Quantity by Class
+= MAX(Opening GOOD Quantity - Cumulative Counted Quantity, 0)
+
+Completed A/B/C contribution + Pending A/B/C contribution = 100%
+```
+
+If `SKU_MASTER` has no valid A/B/C class for a SKU, that SKU is assigned to
+Class C by default. An old cached `Unclassified` quantity, if present, is also
+merged into C before the coverage breakdown is returned.
 
 ### Inventory Accuracy - Quantity
 
 The first ribbon shows quantity-based Inventory Accuracy and System Quantity
 for all four periods. Each period card is clickable. It opens an ABC Class
-detail panel with quantity and COGS views for A, B, C, Unclassified, and Total.
+detail panel with quantity and COGS views for A, B, C, and Total.
 
 The quantity view shows unique SKU count, System Quantity, Physical Quantity,
-Difference, and Accuracy. The COGS view shows costed SKU count, System Value,
-Physical Value, Difference Value, Value Accuracy, and Cost Coverage.
+Short Quantity, Excess Quantity, Absolute Variance, Net Difference, and
+Accuracy. The COGS view shows the equivalent value inputs, Value Accuracy, and
+Cost Coverage. Accuracy uses Absolute Variance, not Net Difference.
 
 ### Inventory Accuracy - Value / COGS
 
@@ -243,6 +278,13 @@ Coverage.
 
 ### Detailed KPI cards
 
+On the Executive KPI landing page, the detailed cards use **Current Quarter to
+Date**: the first day of the current quarter through the current reporting
+date. For Q2 2026, this means 1 July 2026 through today.
+
+On the Inventory Transactions page, the same cards use the currently selected
+Date and Facility, or Month to Date when the filters are clear.
+
 The detailed cards show:
 
 - Bin Accuracy
@@ -255,6 +297,23 @@ The detailed cards show:
 - Net Difference Quantity and Value
 
 Negative quantities and values are displayed in parentheses.
+
+### Transaction CSV downloads
+
+The Inventory Transactions page provides three server-generated CSV downloads:
+
+- **Yesterday CSV** always downloads the previous calendar date in
+  `Asia/Kolkata`. It is based on the dashboard reporting date and does not
+  change when the Date filter is temporarily set to another day.
+- **MTD CSV** downloads from the first day of the selected/current month
+  through the selected/current reporting date.
+- **Quarter CSV** downloads from the first day of the selected/current calendar
+  quarter through the selected/current reporting date.
+
+All three downloads retain the active Facility and global Search filters.
+Undated NTF rows are excluded from Yesterday CSV and included in MTD and
+Quarter CSV. Because those rows have no date, they cannot be assigned to the
+Yesterday file.
 
 ### Daily email
 
@@ -288,6 +347,8 @@ Inventory_Visibility/
 |   |   |-- main.tsx
 |   |   |-- types.ts
 |   |   `-- components/
+|   |       |-- CalculationLogicPage.tsx
+|   |       |-- CycleCoveragePage.tsx
 |   |       |-- FilterBar.tsx
 |   |       |-- InventoryTable.tsx
 |   |       |-- KpiCard.tsx
@@ -514,9 +575,9 @@ SKU | Item Name | Brand | Category | Pack Size | ABC Class
 ```
 
 Enter only `A`, `B`, or `C` in `ABC Class`. Inventory SKUs with a blank or
-invalid class, or with no matching SKU master row, remain visible under
-`Unclassified`. SKU matching is case-insensitive. The ABC breakdown includes
-all transaction rows for the selected banner period and counts each SKU once
+invalid class, or with no matching SKU master row, are assigned to **Class C by
+default**. SKU matching is case-insensitive. The ABC breakdown includes all
+transaction rows for the selected banner period and counts each SKU once
 within its class.
 
 Master sheet lookup is case-insensitive. These APIs remain available, but the
@@ -598,7 +659,8 @@ Run these functions one at a time:
 | `testMasters()` | Bin and SKU master APIs | No |
 | `testEmailPreview()` | Email model, HTML, and quarter CSV without sending | No |
 | `testPaginatedTransactions()` | Small MTD transaction page, KPI summary, and response size | No |
-| `testAbcBreakdownCalculations()` | ABC quantity and COGS formulas, negative difference, and Unclassified handling | No |
+| `testAbcBreakdownCalculations()` | ABC quantity/COGS formulas, negative difference, and default-Class-C handling | No |
+| `testCycleCoverageAbcContributions()` | Completed/pending A/B/C quantities and reconciliation to 100% | No |
 
 For each test:
 
@@ -719,7 +781,7 @@ Copy-Item frontend\.env.example frontend\.env.local
 Open `frontend/.env.local` and set:
 
 ```text
-VITE_APPS_SCRIPT_URL=https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec
+VITE_APPS_SCRIPT_URL=https://script.google.com/a/macros/mosaicwellness.in/s/YOUR_DEPLOYMENT_ID/exec
 VITE_GOOGLE_CLIENT_ID=YOUR_GOOGLE_OAUTH_CLIENT_ID.apps.googleusercontent.com
 VITE_GOOGLE_ALLOWED_DOMAIN=mosaicwellness.in
 ```
@@ -770,6 +832,16 @@ The current public Apps Script `/exec` URL is configured as
 `VITE_APPS_SCRIPT_URL` in `.github/workflows/deploy-pages.yml`. Vite includes
 this URL in the published browser files, so it is configuration rather than a
 private secret.
+
+This Google Workspace project uses the controlled-domain URL format:
+
+```text
+https://script.google.com/a/macros/mosaicwellness.in/s/DEPLOYMENT_ID/exec
+```
+
+Use the exact URL from the deployment workflow. In this environment, replacing
+it with the generic `https://script.google.com/macros/s/.../exec` form can
+return a 404 response.
 
 When Apps Script is moved to a different deployment, update the workflow URL
 and `frontend/.env.local` together. Test the new URL with `?action=dashboard`
@@ -828,11 +900,16 @@ All percentages are rounded to two decimal places.
 ## Quantity Inventory Accuracy
 
 ```text
-100 - (Total Absolute Difference / Total System Quantity x 100)
+Absolute Variance = Short Quantity + Excess Quantity
+
+Inventory Accuracy %
+= 100 - (Absolute Variance / Total System Quantity x 100)
 ```
 
-`Total Absolute Difference` is the sum of `ABS(Diff)` for all selected rows.
-If System Quantity is zero, the result is zero.
+`Absolute Variance` is the sum of `ABS(Diff)` for all selected rows. It is the
+number displayed beside Short, Excess, and Net Difference in the ABC quantity
+detail. Net Difference is not used in the accuracy formula. If System Quantity
+is zero, the result is zero.
 
 ## Value Inventory Accuracy
 
@@ -921,6 +998,8 @@ Planned Bin Count:
 - Yesterday: Daily Planned Bin Count
 - Last Month: Daily Planned Bin Count x Working Days
 - Last Quarter: Daily Planned Bin Count x Working Days x 3
+- Current Quarter to Date: Daily Planned Bin Count x completed
+  Monday-Saturday days since the quarter start
 - Month to Date: Daily Planned Bin Count x completed Monday-Saturday days,
   capped at the configured Working Days
 - A selected custom date in the frontend: Daily Planned Bin Count
@@ -950,8 +1029,10 @@ Difference, Short Quantity, quantity accuracy, and all related costed value
 KPIs.
 
 Dated NTF rows are included in their normal reporting date. Current-sheet NTF
-rows without a valid Date are included in Month to Date only. They cannot be
-placed in Yesterday or a daily trend without a reliable date.
+rows without a valid Date are included in Month to Date and Current Quarter to
+Date. They cannot be placed in Yesterday or a daily trend without a reliable
+date. The dated quarter CSV attached to email excludes them because it cannot
+assign them a reporting date.
 
 Other rows with a blank or invalid Date remain available in the transaction API
 but cannot be assigned to a dated KPI period. Correct their Date in the source
@@ -997,21 +1078,31 @@ accuracy:
 - [ ] Select a current date and confirm KPI cards and transactions
   change.
 - [ ] Select a date from `Q1-AMJ26` and confirm historical rows appear.
-- [ ] Select a Facility and confirm the detailed results and period ribbons
-  change.
+- [ ] On Inventory Transactions, select a Facility and confirm the transaction
+  KPIs and table change while the Executive comparison ribbons remain fixed.
 - [ ] Click **Clear filters** and confirm Month-to-Date details return.
+- [ ] Confirm the Executive KPI detailed cards show Current Quarter-to-Date
+  totals, not only the current month.
 - [ ] Confirm the Quantity Accuracy ribbon has four periods.
 - [ ] Confirm the Value/COGS ribbon has four periods, System Value, and Cost
   Coverage.
 - [ ] Confirm there is no separate NTF KPI card.
 - [ ] Confirm NTF rows contribute as full shortages in Month-to-Date totals.
+- [ ] Expand **Show ABC details** in Overall Quantity Coverage and confirm A,
+  B, and C completed/pending quantities reconcile to 100%.
+- [ ] Confirm unmapped or invalid ABC Class SKUs are included in Class C.
 - [ ] Open **Calculation Logic** and confirm the formulas, live Config values,
   data sources, and publication flow are readable on desktop and mobile.
 - [ ] Confirm the Masters section is not visible.
 - [ ] Test transaction global search.
 - [ ] Test column sorting.
 - [ ] Test pagination and page size.
-- [ ] Export CSV and confirm it contains the filtered and searched rows.
+- [ ] Export **Yesterday CSV** and confirm it contains the previous calendar
+  date even when another Date filter is selected.
+- [ ] Export **MTD CSV** and confirm it starts on the first day of the month.
+- [ ] Export **Quarter CSV** and confirm it starts on the first day of the
+  current/selected quarter.
+- [ ] Confirm all CSV downloads retain the selected Facility and global Search.
 - [ ] Confirm the Dashboard Charts section is not displayed.
 - [ ] Test light and dark mode.
 - [ ] Test on desktop and a phone-sized screen.
@@ -1100,7 +1191,8 @@ Check:
 - Date is a real Google Sheets date or a valid recognizable date
 - the row is not completely blank
 - the selected period includes the date
-- current undated NTF is included in Month to Date only
+- current undated NTF is included in Month to Date and Current Quarter to Date,
+  but not Yesterday or another dated daily period
 - the source or historical sheet has every required header
 
 ## GitHub Pages is blank or has missing assets

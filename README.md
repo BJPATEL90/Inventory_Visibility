@@ -242,6 +242,14 @@ If `SKU_MASTER` has no valid A/B/C class for a SKU, that SKU is assigned to
 Class C by default. An old cached `Unclassified` quantity, if present, is also
 merged into C before the coverage breakdown is returned.
 
+If a new hidden-sheet snapshot contains the overall opening GOOD quantity but
+its A/B/C opening columns are temporarily blank, Apps Script first tries to
+rebuild the exact split from the emailed inventory CSV. If that source is not
+available, it scales the most recent valid A/B/C opening mix to the new total.
+As a final response safeguard, the total pending quantity is allocated using
+the completed class mix instead of publishing zero pending quantities. A later
+successful refresh replaces the fallback with the exact source split.
+
 ### Inventory Accuracy - Quantity
 
 The first ribbon shows quantity-based Inventory Accuracy and System Quantity

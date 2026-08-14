@@ -2395,10 +2395,51 @@ function testCycleCoverageAbcContributions() {
   assertEqual_(result.classes[2].pendingQuantity, 5, 'C pending quantity');
   assertEqual_(result.totalPercent, 100, 'Completed plus pending');
 
+  const missingOpeningResult = calculateCoverageAbcBreakdown_([
+    {
+      abcClass: 'A',
+      openingGoodQuantity: 0,
+      dailyCountedQuantity: 0,
+      cumulativeCountedQuantity: 30
+    },
+    {
+      abcClass: 'B',
+      openingGoodQuantity: 0,
+      dailyCountedQuantity: 0,
+      cumulativeCountedQuantity: 20
+    },
+    {
+      abcClass: 'C',
+      openingGoodQuantity: 0,
+      dailyCountedQuantity: 0,
+      cumulativeCountedQuantity: 20
+    }
+  ], 100, 70);
+  const repairedPendingTotal = missingOpeningResult.classes.reduce(
+    function (total, item) {
+      return total + item.pendingQuantity;
+    },
+    0
+  );
+
+  assertEqual_(
+    repairedPendingTotal,
+    30,
+    'Missing ABC opening pending quantity fallback'
+  );
+  missingOpeningResult.classes.forEach(function (item) {
+    if (item.pendingQuantity <= 0) {
+      throw new Error(
+        item.abcClass + ' pending quantity fallback remained zero.'
+      );
+    }
+  });
+
   const output = {
     passed: true,
     rule: 'ABC completed contribution + ABC pending contribution = 100%.',
-    result: result
+    result: result,
+    missingOpeningFallback: missingOpeningResult
   };
   console.log(JSON.stringify(output, null, 2));
   return output;
@@ -3728,7 +3769,15 @@ function repairLatestCoverageAbcOpeningIfMissing_(spreadsheet, sheet) {
   );
 
   if (!repaired) {
-    return false;
+    return repairCoverageAbcOpeningFromPrevious_(
+      sheet,
+      latestRowNumber,
+      latestRow,
+      headers,
+      indexes,
+      latestDate,
+      totalGoodQuantity
+    );
   }
 
   const repairedAbcTotal = COVERAGE_ABC_CLASSES.reduce(
@@ -3743,9 +3792,17 @@ function repairLatestCoverageAbcOpeningIfMissing_(spreadsheet, sheet) {
   if (Math.abs(repairedAbcTotal - totalGoodQuantity) > 0.01) {
     console.warn(
       'ABC opening repair was not saved because its total did not match ' +
-        'the latest TOTAL Good Qty.'
+      'the latest TOTAL Good Qty.'
     );
-    return false;
+    return repairCoverageAbcOpeningFromPrevious_(
+      sheet,
+      latestRowNumber,
+      latestRow,
+      headers,
+      indexes,
+      latestDate,
+      totalGoodQuantity
+    );
   }
 
   sheet
@@ -3761,6 +3818,95 @@ function repairLatestCoverageAbcOpeningIfMissing_(spreadsheet, sheet) {
     'Repaired the latest ABC opening split for ' + records[0].date + '.'
   );
   return true;
+}
+
+/**
+ * Uses the latest earlier valid A/B/C opening mix when today's source split is
+ * temporarily unavailable.
+ *
+ * The previous class proportions are scaled to today's TOTAL Good Qty. This is
+ * safer than returning zero pending quantities and is automatically replaced
+ * when a later refresh can read the exact emailed CSV split.
+ */
+function repairCoverageAbcOpeningFromPrevious_(
+  sheet,
+  latestRowNumber,
+  latestRow,
+  headers,
+  indexes,
+  latestDate,
+  totalGoodQuantity
+) {
+  if (latestRowNumber <= 2 || totalGoodQuantity <= 0) {
+    return false;
+  }
+
+  const priorRows = sheet
+    .getRange(2, 1, latestRowNumber - 2, headers.length)
+    .getValues();
+
+  for (let index = priorRows.length - 1; index >= 0; index -= 1) {
+    const priorRow = priorRows[index];
+    const priorQuantities = coverageAbcOpeningFromRow_(priorRow, indexes);
+    const priorTotal = COVERAGE_ABC_CLASSES.reduce(
+      function (total, abcClass) {
+        return total + toNumber_(priorQuantities[abcClass]);
+      },
+      0
+    );
+
+    if (priorTotal <= 0) {
+      continue;
+    }
+
+    const scaledQuantities = scaleCoverageAbcOpening_(
+      priorQuantities,
+      totalGoodQuantity
+    );
+    const priorDate = normalizeDate_(
+      priorRow[indexes.Date],
+      getTimeZone_()
+    );
+
+    applyCoverageAbcOpeningToRow_(
+      latestRow,
+      indexes,
+      scaledQuantities
+    );
+    latestRow[indexes['ABC Mapping Signature']] =
+      'FALLBACK_FROM_' + (priorDate || 'PREVIOUS');
+    sheet
+      .getRange(latestRowNumber, 1, 1, headers.length)
+      .setValues([latestRow]);
+    saveLatestCoverageAbcOpening_(
+      latestDate,
+      scaledQuantities,
+      totalGoodQuantity,
+      latestRow[indexes['ABC Mapping Signature']]
+    );
+    console.warn(
+      'Used the ABC opening mix from ' +
+        (priorDate || 'the previous valid snapshot') +
+        ' for ' + latestDate + ' because today\'s exact split was unavailable.'
+    );
+    return true;
+  }
+
+  return false;
+}
+
+/** Scales one A/B/C opening mix to a new TOTAL Good Qty without losing units. */
+function scaleCoverageAbcOpening_(quantities, targetTotal) {
+  const weights = COVERAGE_ABC_CLASSES.map(function (abcClass) {
+    return Math.max(0, toNumber_(quantities && quantities[abcClass]));
+  });
+  const distributed = distributeCoverageQuantity_(targetTotal, weights);
+  const scaled = emptyCoverageAbcNumberMap_();
+
+  COVERAGE_ABC_CLASSES.forEach(function (abcClass, index) {
+    scaled[abcClass] = distributed[index];
+  });
+  return scaled;
 }
 
 /** Returns the four stored opening quantities from one coverage row. */
@@ -4440,6 +4586,32 @@ function calculateCoverageAbcBreakdown_(
   const countedWeights = classTotals.map(function (item) {
     return Math.max(0, toNumber_(item.cumulativeCountedQuantity));
   });
+  const storedOpeningTotal = classTotals.reduce(function (total, item) {
+    return total + Math.max(0, toNumber_(item.openingGoodQuantity));
+  }, 0);
+
+  // A stale importer can occasionally store the overall GOOD total before its
+  // A/B/C split. Never publish zero pending quantities in that state. Allocate
+  // the opening total by the completed class mix until the exact split is
+  // restored from the source CSV or a previous valid snapshot.
+  if (safeGood > 0 && storedOpeningTotal <= 0) {
+    const fallbackWeights = countedWeights.some(function (value) {
+      return value > 0;
+    })
+      ? countedWeights
+      : classTotals.map(function (item) {
+          return item.abcClass === 'C' ? 1 : 0;
+        });
+    const fallbackOpenings = distributeCoverageQuantity_(
+      safeGood,
+      fallbackWeights
+    );
+
+    classTotals.forEach(function (item, index) {
+      item.openingGoodQuantity = fallbackOpenings[index];
+    });
+  }
+
   const pendingWeights = classTotals.map(function (item) {
     return Math.max(
       0,
@@ -4479,6 +4651,38 @@ function calculateCoverageAbcBreakdown_(
     pendingPercent: round_(pendingPercent, 2),
     totalPercent: safeGood > 0 ? 100 : 0
   };
+}
+
+/** Distributes one quantity across weights and corrects the rounding balance. */
+function distributeCoverageQuantity_(targetQuantity, weights) {
+  const target = round_(Math.max(0, toNumber_(targetQuantity)), 2);
+  const safeWeights = (weights || []).map(function (value) {
+    return Math.max(0, toNumber_(value));
+  });
+  const totalWeight = safeWeights.reduce(function (total, value) {
+    return total + value;
+  }, 0);
+  const result = safeWeights.map(function (value) {
+    return totalWeight === 0 ? 0 : round_(target * value / totalWeight, 2);
+  });
+
+  if (target > 0 && totalWeight > 0) {
+    const currentTotal = result.reduce(function (total, value) {
+      return total + value;
+    }, 0);
+    const correction = round_(target - currentTotal, 2);
+    let correctionIndex = safeWeights.length - 1;
+
+    while (correctionIndex > 0 && safeWeights[correctionIndex] === 0) {
+      correctionIndex -= 1;
+    }
+    result[correctionIndex] = round_(
+      result[correctionIndex] + correction,
+      2
+    );
+  }
+
+  return result;
 }
 
 /** Spreads a target percentage across weights and fixes rounding to reconcile. */

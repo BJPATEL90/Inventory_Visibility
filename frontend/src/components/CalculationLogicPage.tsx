@@ -465,7 +465,7 @@ export function CalculationLogicPage({
             {
               name: 'ABC pending contribution',
               formula: 'max(Class Opening GOOD Qty - Class Cumulative Counted Qty, 0)',
-              text: 'Each class pending quantity is calculated first. Its share of total opening inventory gives the pending contribution; completed plus pending reconciles to 100%.'
+              text: 'Each class pending quantity is calculated first. If a new snapshot temporarily lacks its A/B/C opening split, Apps Script restores the latest valid class mix and scales it to today’s total; the API also prevents a zero pending result while the exact CSV split is being recovered. Completed plus pending reconciles to 100%.'
             },
             {
               name: 'Inventory change',

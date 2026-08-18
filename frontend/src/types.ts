@@ -228,6 +228,7 @@ export interface CycleCoverageData {
   selectedMonth: string;
   availableMonths: string[];
   facilities: CoverageFacilityKey[];
+  topSkuInsights?: TopSkuInsights | null;
   rows: CycleCoverageRow[];
   latest: CycleCoverageRow | null;
 }

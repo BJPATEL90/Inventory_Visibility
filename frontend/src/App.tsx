@@ -1438,6 +1438,8 @@ export default function App() {
     queryKey: ['dashboard'],
     queryFn: getDashboard,
     initialData: getCachedDashboard,
+    initialDataUpdatedAt: 0,
+    refetchOnMount: 'always',
     enabled: Boolean(signedInUser),
     refetchInterval: refreshInterval,
     retry: 2,
@@ -1901,6 +1903,7 @@ export default function App() {
             <CycleCoverageBanner
               latest={cycleCoverageQuery.data?.data.latest}
               topSkuInsights={
+                cycleCoverageQuery.data?.data.topSkuInsights ||
                 dashboard.periods.currentQuarterToDate.topSkuInsights
               }
               isLoading={cycleCoverageQuery.isLoading}

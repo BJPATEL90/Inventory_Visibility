@@ -3575,6 +3575,7 @@ function findLatestInventoryEmail_(
 function getCycleCoverage(optionalMonth) {
   const config = getConfig();
   const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const topSkuInsights = getCachedTopSkuInsights_();
   let sheet = spreadsheet.getSheetByName(CYCLE_COVERAGE_SHEET_NAME);
   if (sheet && !cycleCoverageHasAbcColumns_(sheet)) {
     sheet = setupCycleCoverageSheet_(spreadsheet);
@@ -3593,6 +3594,7 @@ function getCycleCoverage(optionalMonth) {
         config.coverageCycleStartDate.slice(0, 7),
       availableMonths: [],
       facilities: COVERAGE_FACILITIES.slice(),
+      topSkuInsights: topSkuInsights,
       rows: [],
       latest: null
     };
@@ -3621,9 +3623,34 @@ function getCycleCoverage(optionalMonth) {
     selectedMonth: selectedMonth,
     availableMonths: availableMonths,
     facilities: COVERAGE_FACILITIES.slice(),
+    topSkuInsights: topSkuInsights,
     rows: monthRows,
     latest: latest
   };
+}
+
+/** Reads the compact QTD Top 5 summary already stored in dashboard cache. */
+function getCachedTopSkuInsights_() {
+  const cachedText = CacheService
+    .getScriptCache()
+    .get(DASHBOARD_CACHE_KEY);
+
+  if (!cachedText) {
+    return null;
+  }
+
+  try {
+    const dashboard = JSON.parse(cachedText);
+    const period = dashboard && dashboard.periods
+      ? dashboard.periods.currentQuarterToDate
+      : null;
+    return period && period.topSkuInsights
+      ? period.topSkuInsights
+      : null;
+  } catch (error) {
+    console.warn('The cached Top 5 SKU summary could not be read.');
+    return null;
+  }
 }
 
 /** Refreshes hidden counted quantities without interrupting the main KPI API. */

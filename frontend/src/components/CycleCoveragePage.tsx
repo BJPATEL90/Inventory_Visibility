@@ -66,6 +66,12 @@ function progressWidth(value: number) {
   return `${Math.min(100, Math.max(0, value))}%`;
 }
 
+/** Percentage of a class already counted against that class's total inventory. */
+function calculateClassCompletionPercent(completed: number, pending: number) {
+  const classTotal = completed + pending;
+  return classTotal > 0 ? (completed / classTotal) * 100 : 0;
+}
+
 function ProgressBar({ value }: { value: number }) {
   return (
     <div
@@ -155,6 +161,12 @@ function CoverageAbcDetails({ breakdown }: { breakdown: CoverageAbcBreakdown }) 
               >
                 Total %
               </th>
+              <th
+                rowSpan={2}
+                className="border-l border-white/10 px-3 py-2 text-right font-semibold text-cyan-100"
+              >
+                Class Completion %
+              </th>
             </tr>
             <tr className="border-t border-white/10 text-[11px]">
               <th className="border-l border-white/10 px-3 py-1.5 text-right font-medium">
@@ -195,6 +207,14 @@ function CoverageAbcDetails({ breakdown }: { breakdown: CoverageAbcBreakdown }) 
                       row.pendingContributionPercent
                   )}
                 </td>
+                <td className="border-l border-white/10 px-3 py-2 text-right font-black text-cyan-200">
+                  {formatPercent(
+                    calculateClassCompletionPercent(
+                      row.cumulativeCountedQuantity,
+                      row.pendingQuantity
+                    )
+                  )}
+                </td>
               </tr>
             ))}
             <tr className="bg-white/10 font-black text-white">
@@ -214,6 +234,14 @@ function CoverageAbcDetails({ breakdown }: { breakdown: CoverageAbcBreakdown }) 
               <td className="border-l border-white/10 px-3 py-2 text-right">
                 {formatPercent(breakdown.totalPercent)}
               </td>
+              <td className="border-l border-white/10 px-3 py-2 text-right text-cyan-200">
+                {formatPercent(
+                  calculateClassCompletionPercent(
+                    totalCompletedQuantity,
+                    totalPendingQuantity
+                  )
+                )}
+              </td>
             </tr>
           </tbody>
         </table>
@@ -221,6 +249,8 @@ function CoverageAbcDetails({ breakdown }: { breakdown: CoverageAbcBreakdown }) 
       <p className="mt-2 text-[11px] leading-5 text-blue-200">
         Completed A/B/C contributions add to overall coverage. Pending A/B/C
         contributions add to the remaining coverage; together they equal 100%.
+        Class Completion % is Completed Qty divided by Completed Qty plus
+        Pending Qty.
       </p>
     </div>
   );

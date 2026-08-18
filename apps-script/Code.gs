@@ -6263,11 +6263,16 @@ function inventoryHeaderIndexes_(headerRow, sheetName) {
       normalizeHeader_(requiredHeader)
     );
 
-    // SL_RX currently exports the product description as Item Type Name.
-    // Treat it as the logical Item Name without changing the source sheet.
-    if (index < 0 && requiredHeader === 'Item Name') {
+    // SL_RX uses alternate export labels for these descriptive columns.
+    // Map them to the dashboard names without changing the source sheet.
+    const alternateHeaders = {
+      'Item Name': 'Item Type Name',
+      'Batch': 'Batch Code',
+      'Vendor Batch Number': 'Vendor Batch Code'
+    };
+    if (index < 0 && alternateHeaders[requiredHeader]) {
       index = normalizedHeaders.indexOf(
-        normalizeHeader_('Item Type Name')
+        normalizeHeader_(alternateHeaders[requiredHeader])
       );
     }
 

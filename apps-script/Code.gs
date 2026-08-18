@@ -2967,6 +2967,75 @@ function testAbcBreakdownCalculations() {
   return output;
 }
 
+/** Tests the Top 5 Volume and Variance SKU ranking without reading sheets. */
+function testTopSkuInsightsCalculations() {
+  const rows = [
+    {
+      skuCode: 'A-SKU-1',
+      itemName: 'A first item',
+      abcClass: 'A',
+      systemQuantity: 10,
+      physicalQuantity: 8,
+      difference: -2,
+      unitCost: 10,
+      rack: '',
+      shelf: '',
+      remark: ''
+    },
+    {
+      skuCode: 'A-SKU-1',
+      itemName: 'A first item',
+      abcClass: 'A',
+      systemQuantity: 5,
+      physicalQuantity: 7,
+      difference: 2,
+      unitCost: 10,
+      rack: '',
+      shelf: '',
+      remark: ''
+    },
+    {
+      skuCode: 'A-SKU-2',
+      itemName: 'A second item',
+      abcClass: 'A',
+      systemQuantity: 20,
+      physicalQuantity: 10,
+      difference: -10,
+      unitCost: 5,
+      rack: '',
+      shelf: '',
+      remark: ''
+    },
+    {
+      skuCode: 'B-SKU-1',
+      itemName: 'B item',
+      abcClass: 'B',
+      systemQuantity: 4,
+      physicalQuantity: 5,
+      difference: 1,
+      unitCost: 3,
+      rack: '',
+      shelf: '',
+      remark: ''
+    }
+  ];
+  const result = calculateTopSkuInsights_(rows);
+  const classA = result.classes[0];
+
+  assertEqual_(classA.volume[0].skuCode, 'A-SKU-2', 'A volume rank 1');
+  assertEqual_(classA.volume[0].value, 100, 'A volume COGS value');
+  assertEqual_(classA.variance[0].skuCode, 'A-SKU-2', 'A variance rank 1');
+  assertEqual_(classA.variance[0].varianceQuantity, -10, 'A variance qty');
+  assertEqual_(classA.variance[0].value, -50, 'A variance COGS value');
+
+  const output = {
+    passed: true,
+    classes: result.classes
+  };
+  console.log(JSON.stringify(output, null, 2));
+  return output;
+}
+
 /**
  * Creates the quarter-to-date CSV attached to the inventory email.
  *
@@ -3118,6 +3187,118 @@ function createInventoryImportTrigger() {
     handler: INVENTORY_IMPORT_HANDLER,
     importMinutes: minutes,
     triggerId: trigger.getUniqueId()
+  };
+}
+
+/**
+ * Builds compact quarter-to-date Top 5 SKU lists for the coverage drawer.
+ *
+ * Volume Level is ranked by total System Quantity. Variance Level is ranked
+ * by the absolute net Difference quantity. Both tables expose System,
+ * Physical, Variance, and COGS Value without sending every transaction row to
+ * the browser. Missing or invalid ABC classes follow the dashboard rule and
+ * are included in Class C.
+ */
+function calculateTopSkuInsights_(inventoryRows) {
+  const rows = Array.isArray(inventoryRows) ? inventoryRows : [];
+  const classOrder = ['A', 'B', 'C'];
+  const classBuckets = {};
+
+  classOrder.forEach(function (abcClass) {
+    classBuckets[abcClass] = {};
+  });
+
+  rows.forEach(function (row) {
+    const skuCode = cleanText_(row.skuCode);
+    const skuKey = normalizeSku_(skuCode);
+    if (!skuKey) {
+      return;
+    }
+
+    const abcClass = normalizeAbcClass_(row.abcClass);
+    const bucket = classBuckets[abcClass];
+    const systemQuantity = toNumber_(row.systemQuantity);
+    const ntfRow = isNtfRow_(row);
+    const physicalQuantity = ntfRow
+      ? 0
+      : toNumber_(row.physicalQuantity);
+    const varianceQuantity = ntfRow
+      ? 0 - systemQuantity
+      : toNumber_(row.difference);
+    const unitCost = optionalNumber_(row.unitCost);
+
+    if (!bucket[skuKey]) {
+      bucket[skuKey] = {
+        skuCode: skuCode,
+        itemName: cleanText_(row.itemName) || skuCode,
+        systemQuantity: 0,
+        physicalQuantity: 0,
+        varianceQuantity: 0,
+        systemValue: 0,
+        varianceValue: 0,
+        missingCostRowCount: 0
+      };
+    }
+
+    const sku = bucket[skuKey];
+    if (!sku.itemName && row.itemName) {
+      sku.itemName = cleanText_(row.itemName);
+    }
+    sku.systemQuantity += systemQuantity;
+    sku.physicalQuantity += physicalQuantity;
+    sku.varianceQuantity += varianceQuantity;
+
+    if (unitCost !== null && unitCost >= 0) {
+      sku.systemValue += systemQuantity * unitCost;
+      sku.varianceValue += varianceQuantity * unitCost;
+    } else {
+      sku.missingCostRowCount += 1;
+    }
+  });
+
+  return {
+    classes: classOrder.map(function (abcClass) {
+      const skuRows = Object.keys(classBuckets[abcClass]).map(function (key) {
+        return classBuckets[abcClass][key];
+      });
+      const volumeRows = skuRows.slice().sort(function (first, second) {
+        const quantityResult =
+          second.systemQuantity - first.systemQuantity;
+        return quantityResult !== 0
+          ? quantityResult
+          : first.skuCode.localeCompare(second.skuCode);
+      }).slice(0, 5);
+      const varianceRows = skuRows.slice().sort(function (first, second) {
+        const varianceResult =
+          Math.abs(second.varianceQuantity) -
+          Math.abs(first.varianceQuantity);
+        return varianceResult !== 0
+          ? varianceResult
+          : first.skuCode.localeCompare(second.skuCode);
+      }).slice(0, 5);
+
+      return {
+        abcClass: abcClass,
+        volume: volumeRows.map(function (sku) {
+          return topSkuInsightRow_(sku, sku.systemValue);
+        }),
+        variance: varianceRows.map(function (sku) {
+          return topSkuInsightRow_(sku, sku.varianceValue);
+        })
+      };
+    })
+  };
+}
+
+/** Converts one aggregated SKU into the small frontend Top 5 row. */
+function topSkuInsightRow_(sku, value) {
+  return {
+    skuCode: sku.skuCode,
+    itemName: sku.itemName || sku.skuCode,
+    systemQuantity: round_(sku.systemQuantity, 2),
+    physicalQuantity: round_(sku.physicalQuantity, 2),
+    varianceQuantity: round_(sku.varianceQuantity, 2),
+    value: sku.missingCostRowCount > 0 ? null : round_(value, 2)
   };
 }
 
@@ -5240,7 +5421,7 @@ function buildDashboard_(optionalInventoryData, optionalFilters) {
       return isDatedPeriodRow || isCurrentUndatedNtf;
     });
 
-    periods[periodKey] = {
+    const periodData = {
       label: range.label,
       startDate: range.startDate,
       endDate: range.endDate,
@@ -5256,6 +5437,14 @@ function buildDashboard_(optionalInventoryData, optionalFilters) {
         ? zeroActivityMessage_(range)
         : null
     };
+
+    // The coverage banner needs only one compact QTD Top 5 summary. Building
+    // it during the existing refresh avoids a second heavy source-sheet read.
+    if (periodKey === 'currentQuarterToDate') {
+      periodData.topSkuInsights = calculateTopSkuInsights_(periodRows);
+    }
+
+    periods[periodKey] = periodData;
   });
 
   return {
@@ -6070,9 +6259,17 @@ function inventoryHeaderIndexes_(headerRow, sheetName) {
   const indexes = {};
 
   INVENTORY_HEADERS.forEach(function (requiredHeader) {
-    const index = normalizedHeaders.indexOf(
+    let index = normalizedHeaders.indexOf(
       normalizeHeader_(requiredHeader)
     );
+
+    // SL_RX currently exports the product description as Item Type Name.
+    // Treat it as the logical Item Name without changing the source sheet.
+    if (index < 0 && requiredHeader === 'Item Name') {
+      index = normalizedHeaders.indexOf(
+        normalizeHeader_('Item Type Name')
+      );
+    }
 
     if (index < 0) {
       throw new Error(

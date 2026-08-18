@@ -87,6 +87,25 @@ export interface AbcBreakdown {
   unclassifiedSkuCount: number;
 }
 
+export interface TopSkuInsightRow {
+  skuCode: string;
+  itemName: string;
+  systemQuantity: number;
+  physicalQuantity: number;
+  varianceQuantity: number;
+  value: number | null;
+}
+
+export interface TopSkuClassInsight {
+  abcClass: 'A' | 'B' | 'C';
+  volume: TopSkuInsightRow[];
+  variance: TopSkuInsightRow[];
+}
+
+export interface TopSkuInsights {
+  classes: TopSkuClassInsight[];
+}
+
 export interface PeriodData {
   label: string;
   startDate: string;
@@ -94,6 +113,7 @@ export interface PeriodData {
   rowCount: number;
   kpis: Kpis;
   abcBreakdown: AbcBreakdown;
+  topSkuInsights?: TopSkuInsights;
   zeroActivity: ZeroActivity | null;
 }
 

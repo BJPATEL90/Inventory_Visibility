@@ -1900,6 +1900,9 @@ export default function App() {
               <>
             <CycleCoverageBanner
               latest={cycleCoverageQuery.data?.data.latest}
+              topSkuInsights={
+                dashboard.periods.currentQuarterToDate.topSkuInsights
+              }
               isLoading={cycleCoverageQuery.isLoading}
               errorMessage={cycleCoverageErrorMessage}
               changeAlertThreshold={

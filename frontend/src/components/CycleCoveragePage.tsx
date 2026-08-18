@@ -11,10 +11,18 @@ import type {
   CoverageAbcBreakdown,
   CoverageFacilityKey,
   CycleCoverageData,
-  CycleCoverageRow
+  CycleCoverageRow,
+  TopSkuInsightRow,
+  TopSkuInsights
 } from '../types';
 
 const numberFormatter = new Intl.NumberFormat('en-IN', {
+  maximumFractionDigits: 2
+});
+
+const currencyFormatter = new Intl.NumberFormat('en-IN', {
+  style: 'currency',
+  currency: 'INR',
   maximumFractionDigits: 2
 });
 
@@ -35,6 +43,12 @@ function formatNumber(value: number) {
 
 function formatPercent(value: number) {
   return `${numberFormatter.format(value)}%`;
+}
+
+function formatCurrency(value: number | null) {
+  if (value === null) return '—';
+  const formatted = currencyFormatter.format(Math.abs(value));
+  return value < 0 ? `(${formatted})` : formatted;
 }
 
 function formatSignedPercent(value: number) {
@@ -96,8 +110,168 @@ const ABC_CLASS_COLORS = {
   Unclassified: 'bg-amber-400 text-amber-100'
 } as const;
 
+type SelectableAbcClass = 'A' | 'B' | 'C';
+
+/** One compact Top 5 table shared by Volume and Variance views. */
+function TopSkuTable({
+  title,
+  subtitle,
+  valueNote,
+  rows,
+  tone
+}: {
+  title: string;
+  subtitle: string;
+  valueNote: string;
+  rows: TopSkuInsightRow[];
+  tone: 'volume' | 'variance';
+}) {
+  return (
+    <div className="overflow-hidden rounded-xl bg-blue-950/35 ring-1 ring-white/15">
+      <div className="px-3 py-3">
+        <h4
+          className={`text-sm font-black ${
+            tone === 'volume' ? 'text-emerald-200' : 'text-amber-200'
+          }`}
+        >
+          {title}
+        </h4>
+        <p className="mt-0.5 text-[10px] text-blue-200">{subtitle}</p>
+        <p className="mt-0.5 text-[10px] text-blue-300">{valueNote}</p>
+      </div>
+      <div className="overflow-x-auto border-t border-white/10">
+        <table className="min-w-[650px] w-full text-left text-[11px]">
+          <thead className="bg-white/10 text-blue-100">
+            <tr>
+              <th className="min-w-56 px-3 py-2 font-semibold">SKU Name</th>
+              <th className="px-3 py-2 text-right font-semibold">Sys. Qty</th>
+              <th className="px-3 py-2 text-right font-semibold">Phy. Qty</th>
+              <th className="px-3 py-2 text-right font-semibold">Variance</th>
+              <th className="px-3 py-2 text-right font-semibold">Value</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-white/10">
+            {rows.length > 0 ? (
+              rows.map((row) => (
+                <tr key={`${title}-${row.skuCode}`}>
+                  <td className="px-3 py-2 text-blue-50">
+                    <p
+                      className="max-w-64 truncate font-semibold"
+                      title={row.itemName}
+                    >
+                      {row.itemName}
+                    </p>
+                    <p className="mt-0.5 text-[9px] text-blue-300">
+                      {row.skuCode}
+                    </p>
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-2 text-right text-blue-100">
+                    {formatNumber(row.systemQuantity)}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-2 text-right text-blue-100">
+                    {formatNumber(row.physicalQuantity)}
+                  </td>
+                  <td
+                    className={`whitespace-nowrap px-3 py-2 text-right font-bold ${
+                      row.varianceQuantity < 0
+                        ? 'text-rose-200'
+                        : row.varianceQuantity > 0
+                          ? 'text-amber-200'
+                          : 'text-emerald-200'
+                    }`}
+                  >
+                    {formatNumber(row.varianceQuantity)}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-2 text-right font-semibold text-blue-50">
+                    {formatCurrency(row.value)}
+                  </td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan={5} className="px-3 py-6 text-center text-blue-200">
+                  No quarter-to-date SKU data is available for this class.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/** A/B/C tabs with the requested Volume and Variance Top 5 tables. */
+function TopSkuInsightsPanel({ insights }: { insights: TopSkuInsights }) {
+  const [selectedClass, setSelectedClass] =
+    useState<SelectableAbcClass>('A');
+  const classInsight = insights.classes.find(
+    (item) => item.abcClass === selectedClass
+  );
+
+  if (!classInsight) return null;
+
+  return (
+    <div className="mt-4 rounded-xl bg-white/10 p-3 ring-1 ring-white/15">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h3 className="text-sm font-black text-white">Top 5 SKU Insights</h3>
+          <p className="mt-0.5 text-[10px] text-blue-200">
+            Quarter-to-date ranking for the selected ABC class.
+          </p>
+        </div>
+        <div
+          className="inline-flex w-fit rounded-lg bg-blue-950/35 p-1 ring-1 ring-white/15"
+          role="tablist"
+          aria-label="Select ABC class"
+        >
+          {(['A', 'B', 'C'] as SelectableAbcClass[]).map((abcClass) => (
+            <button
+              key={abcClass}
+              type="button"
+              role="tab"
+              aria-selected={selectedClass === abcClass}
+              onClick={() => setSelectedClass(abcClass)}
+              className={`rounded-md px-4 py-1.5 text-xs font-black transition ${
+                selectedClass === abcClass
+                  ? 'bg-cyan-400 text-blue-950 shadow-sm'
+                  : 'text-blue-100 hover:bg-white/10 hover:text-white'
+              }`}
+            >
+              Class {abcClass}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="mt-3 grid gap-3 xl:grid-cols-2">
+        <TopSkuTable
+          title="Volume Level"
+          subtitle="Top 5 ranked by total System Quantity"
+          valueNote="Value shows System Quantity × COGS."
+          rows={classInsight.volume}
+          tone="volume"
+        />
+        <TopSkuTable
+          title="Variance Level"
+          subtitle="Top 5 ranked by absolute net Variance Quantity"
+          valueNote="Value shows Variance Quantity × COGS."
+          rows={classInsight.variance}
+          tone="variance"
+        />
+      </div>
+    </div>
+  );
+}
+
 /** Expandable A/B/C contribution detail for the overall 100% coverage. */
-function CoverageAbcDetails({ breakdown }: { breakdown: CoverageAbcBreakdown }) {
+function CoverageAbcDetails({
+  breakdown,
+  topSkuInsights
+}: {
+  breakdown: CoverageAbcBreakdown;
+  topSkuInsights?: TopSkuInsights;
+}) {
   const rows = breakdown.classes.filter(
     (row) =>
       row.abcClass !== 'Unclassified' ||
@@ -252,6 +426,9 @@ function CoverageAbcDetails({ breakdown }: { breakdown: CoverageAbcBreakdown }) 
         Class Completion % is Completed Qty divided by Completed Qty plus
         Pending Qty.
       </p>
+      {topSkuInsights ? (
+        <TopSkuInsightsPanel insights={topSkuInsights} />
+      ) : null}
     </div>
   );
 }
@@ -259,6 +436,7 @@ function CoverageAbcDetails({ breakdown }: { breakdown: CoverageAbcBreakdown }) 
 /** Reusable overall quantity-coverage banner for home and facility pages. */
 export function CycleCoverageBanner({
   latest,
+  topSkuInsights,
   isLoading = false,
   errorMessage = '',
   onRetry,
@@ -266,6 +444,7 @@ export function CycleCoverageBanner({
   className = ''
 }: {
   latest?: CycleCoverageRow | null;
+  topSkuInsights?: TopSkuInsights;
   isLoading?: boolean;
   errorMessage?: string;
   onRetry?: () => void;
@@ -396,7 +575,10 @@ export function CycleCoverageBanner({
             />
           </button>
           {showAbcDetails ? (
-            <CoverageAbcDetails breakdown={latest.abcCoverage} />
+            <CoverageAbcDetails
+              breakdown={latest.abcCoverage}
+              topSkuInsights={topSkuInsights}
+            />
           ) : null}
         </>
       ) : null}

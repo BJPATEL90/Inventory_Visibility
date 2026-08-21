@@ -3,6 +3,7 @@ import {
   AlertCircle,
   CalendarDays,
   ChevronDown,
+  Download,
   PackageCheck,
   RefreshCw,
   Target
@@ -78,6 +79,69 @@ function formatMonth(value: string) {
 
 function progressWidth(value: number) {
   return `${Math.min(100, Math.max(0, value))}%`;
+}
+
+/** Escapes one value so the downloaded file opens correctly in Excel. */
+function csvValue(value: string | number) {
+  const text = String(value ?? '');
+  return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+/** Downloads all facility KPI rows for the reporting month shown on screen. */
+function exportFacilityKpis(data: CycleCoverageData) {
+  const headers = [
+    'Date',
+    'Facility',
+    'Opening GOOD Qty',
+    'Counted Today',
+    'Cumulative Counted',
+    'Facility Completion %',
+    'Overall Opening GOOD Qty',
+    'Overall Counted Today',
+    'Overall Cumulative Counted',
+    'Overall Completion %',
+    'Inventory Change Qty',
+    'Inventory Change %',
+    'Alert Note',
+    'Source File',
+    'Import Status'
+  ];
+  const rows = data.rows.flatMap((row) =>
+    data.facilities.map((facility) => {
+      const metrics = row.facilities[facility];
+      return [
+        row.date,
+        FACILITY_LABELS[facility],
+        metrics.goodQuantity,
+        metrics.dailyCountedQuantity,
+        metrics.cumulativeCountedQuantity,
+        metrics.completionPercent,
+        row.totalGoodQuantity,
+        row.totalDailyCountedQuantity,
+        row.totalCumulativeCountedQuantity,
+        row.totalCompletionPercent,
+        row.changeQuantity,
+        row.changePercent,
+        row.alertNote,
+        row.sourceFile,
+        row.importStatus
+      ];
+    })
+  );
+  const csv = [headers, ...rows]
+    .map((row) => row.map(csvValue).join(','))
+    .join('\r\n');
+  const blob = new Blob([`\uFEFF${csv}`], {
+    type: 'text/csv;charset=utf-8;'
+  });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `facility_kpi_${data.selectedMonth}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
 }
 
 /** Percentage of a class already counted against that class's total inventory. */
@@ -673,20 +737,31 @@ export function CycleCoveragePage({
             {formatDate(data.cycleEndDate)}
           </p>
         </div>
-        <label className="w-full max-w-xs text-sm font-semibold text-slate-700 dark:text-slate-200">
-          Reporting month
-          <select
-            value={selectedMonth || data.selectedMonth}
-            onChange={(event) => onMonthChange(event.target.value)}
-            className="mt-1.5 h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 shadow-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+        <div className="flex w-full max-w-xs flex-col gap-3 sm:flex-row sm:items-end lg:max-w-xl">
+          <label className="min-w-0 flex-1 text-sm font-semibold text-slate-700 dark:text-slate-200">
+            Reporting month
+            <select
+              value={selectedMonth || data.selectedMonth}
+              onChange={(event) => onMonthChange(event.target.value)}
+              className="mt-1.5 h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 shadow-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+            >
+              {data.availableMonths.map((month) => (
+                <option key={month} value={month}>
+                  {formatMonth(month)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            type="button"
+            onClick={() => exportFacilityKpis(data)}
+            className="flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-blue-700 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+            title="Download the selected month's facility KPI data as CSV"
           >
-            {data.availableMonths.map((month) => (
-              <option key={month} value={month}>
-                {formatMonth(month)}
-              </option>
-            ))}
-          </select>
-        </label>
+            <Download aria-hidden="true" className="h-4 w-4" />
+            Export KPI
+          </button>
+        </div>
       </div>
 
       {errorMessage ? (

@@ -24,11 +24,13 @@ const B2C_SOURCE_SPREADSHEET_ID =
   '1_kBrwiM6ezFeE5kJFqeCMKcl7p_pe_XpNuVYhUmkUpw';
 const B2C_SOURCE_SHEET_NAME = 'B2C';
 const OWN_SOURCE_SHEET_NAME = 'OWN';
+const SL_EXPORT_SOURCE_SHEET_NAME = 'SL_Export';
 
 const SOURCE_SHEETS = [
   'SL_AMBIENT',
   'SL_MH',
   'SL_RX',
+  'SL_Export',
   'OWN',
   'B2C'
 ];
@@ -57,7 +59,8 @@ const HISTORICAL_START_DATE = '2026-04-01';
 const HISTORICAL_END_DATE = '2026-06-30';
 const DEFAULT_TRANSACTION_PAGE_SIZE = 25;
 const MAX_TRANSACTION_PAGE_SIZE = 100;
-const TRANSACTION_CACHE_PREFIX = 'inventory_transaction_page_v2_external_own_';
+const TRANSACTION_CACHE_PREFIX =
+  'inventory_transaction_page_v3_external_own_sl_export_';
 const TRANSACTION_CACHE_SECONDS = 600;
 const COST_HEADERS = [
   'SKU',
@@ -126,7 +129,8 @@ const COVERAGE_FACILITIES = [
   'SL_MM',
   'SL_LJ',
   'SL_BW',
-  'OWN'
+  'OWN',
+  'SL_EXPORT'
 ];
 const COVERAGE_ABC_CLASSES = ['A', 'B', 'C', 'Unclassified'];
 const LATEST_COVERAGE_ABC_PROPERTY = 'LATEST_COVERAGE_ABC_OPENING_V1';
@@ -138,7 +142,8 @@ const INVENTORY_EXPORT_FACILITY_MAP = {
   'SLLJ': 'SL_LJ',
   'SL LJ': 'SL_LJ',
   'SL BW': 'SL_BW',
-  'OWN': 'OWN'
+  'OWN': 'OWN',
+  'SL EXPORT': 'SL_EXPORT'
 };
 const B2C_SOURCE_FACILITY_MAP = {
   'SL MM': 'SL_MM',
@@ -159,7 +164,7 @@ const ACTIVITY_REASONS = [
 ];
 
 const DASHBOARD_CACHE_KEY =
-  'inventory_dashboard_v7_external_own_v1';
+  'inventory_dashboard_v8_external_own_sl_export_v1';
 const LAST_REFRESH_PROPERTY = 'INVENTORY_LAST_REFRESH_TIME';
 const LAST_EMAIL_SENT_PROPERTY = 'INVENTORY_LAST_EMAIL_SENT_TIME';
 const LAST_EMAIL_REPORT_DATE_PROPERTY = 'INVENTORY_LAST_EMAIL_REPORT_DATE';
@@ -453,7 +458,10 @@ function getCombinedData(
       return;
     }
 
-    const sourceSpreadsheet = sheetName === OWN_SOURCE_SHEET_NAME
+    const sourceSpreadsheet = [
+      OWN_SOURCE_SHEET_NAME,
+      SL_EXPORT_SOURCE_SHEET_NAME
+    ].indexOf(sheetName) >= 0
       ? externalCycleSpreadsheet
       : spreadsheet;
     const sheet = sourceSpreadsheet.getSheetByName(sheetName);
@@ -3307,6 +3315,10 @@ function ensureCoverageAutomation() {
   const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
   const sheet = setupCycleCoverageSheet_(spreadsheet);
   const trigger = createInventoryImportTrigger();
+  const slExportOpeningRepaired = repairLatestSlExportOpeningIfMissing_(
+    spreadsheet,
+    sheet
+  );
   const abcOpeningRepaired = repairLatestCoverageAbcOpeningIfMissing_(
     spreadsheet,
     sheet
@@ -3315,6 +3327,7 @@ function ensureCoverageAutomation() {
   return {
     ready: true,
     trigger: trigger,
+    slExportOpeningRepaired: slExportOpeningRepaired,
     abcOpeningRepaired: abcOpeningRepaired
   };
 }
@@ -3323,7 +3336,7 @@ function ensureCoverageAutomation() {
  * Imports the latest unprocessed successful shelf-inventory export from Gmail.
  *
  * The email contains a CloudFront CSV link rather than a Gmail attachment.
- * This function downloads that link, keeps the seven approved facilities,
+ * This function downloads that link, keeps the eight approved facilities,
  * sums the Quantity column by Inventory Type, and stores one date row in the
  * hidden Cycle_Coverage_System sheet.
  */
@@ -3894,6 +3907,114 @@ function coverageCountedQuantitiesByDate_(inventoryRows, cycleStartDate) {
   });
 
   return result;
+}
+
+/**
+ * Backfills SL Export opening inventory into the latest stored coverage row.
+ *
+ * SL Export was added after the original seven-facility coverage model. The
+ * latest Gmail source URL is reused once so today's card is correct even when
+ * that Gmail message was already marked as processed before this mapping was
+ * introduced. Future imports populate the facility during the normal trigger.
+ */
+function repairLatestSlExportOpeningIfMissing_(spreadsheet, sheet) {
+  if (!sheet || sheet.getLastRow() <= 1) {
+    return false;
+  }
+
+  const headers = sheet
+    .getRange(1, 1, 1, sheet.getLastColumn())
+    .getDisplayValues()[0];
+  const indexes = headerIndexMap_(headers);
+  const requiredHeaders = [
+    'SL_EXPORT Good Qty',
+    'SL_EXPORT Bad Qty',
+    'SL_EXPORT QC Rejected Qty',
+    'Source URL'
+  ];
+  const missingHeader = requiredHeaders.some(function (header) {
+    return indexes[header] === undefined;
+  });
+
+  if (missingHeader) {
+    return false;
+  }
+
+  const latestRowNumber = sheet.getLastRow();
+  const latestRow = sheet
+    .getRange(latestRowNumber, 1, 1, headers.length)
+    .getValues()[0];
+  const storedQuantity =
+    toNumber_(latestRow[indexes['SL_EXPORT Good Qty']]) +
+    toNumber_(latestRow[indexes['SL_EXPORT Bad Qty']]) +
+    toNumber_(latestRow[indexes['SL_EXPORT QC Rejected Qty']]);
+
+  if (storedQuantity > 0) {
+    return false;
+  }
+
+  const sourceUrl = cleanText_(latestRow[indexes['Source URL']]);
+  if (!sourceUrl) {
+    return false;
+  }
+
+  const response = UrlFetchApp.fetch(sourceUrl, {
+    method: 'get',
+    followRedirects: true,
+    muteHttpExceptions: true
+  });
+  const responseCode = response.getResponseCode();
+  if (responseCode < 200 || responseCode >= 300) {
+    throw new Error(
+      'SL Export opening repair failed with status ' + responseCode + '.'
+    );
+  }
+
+  const abcClassMap = readAbcClassMap_(spreadsheet);
+  const parsed = parseInventoryExportCsv_(
+    response.getContentText('UTF-8'),
+    abcClassMap
+  );
+  const quantities = parsed.facilities.SL_EXPORT;
+  const importedQuantity =
+    toNumber_(quantities.goodQuantity) +
+    toNumber_(quantities.badQuantity) +
+    toNumber_(quantities.qcRejectedQuantity);
+
+  if (importedQuantity <= 0) {
+    console.warn('The latest inventory CSV contained no SL Export quantity.');
+    return false;
+  }
+
+  latestRow[indexes['SL_EXPORT Good Qty']] = round_(
+    quantities.goodQuantity,
+    2
+  );
+  latestRow[indexes['SL_EXPORT Bad Qty']] = round_(
+    quantities.badQuantity,
+    2
+  );
+  latestRow[indexes['SL_EXPORT QC Rejected Qty']] = round_(
+    quantities.qcRejectedQuantity,
+    2
+  );
+  COVERAGE_ABC_CLASSES.forEach(function (abcClass) {
+    latestRow[indexes[abcClass + ' Good Qty']] = round_(
+      parsed.abcGoodQuantities[abcClass],
+      2
+    );
+  });
+  latestRow[indexes['ABC Mapping Signature']] = abcClassMapSignature_(
+    abcClassMap
+  );
+  sheet
+    .getRange(latestRowNumber, 1, 1, headers.length)
+    .setValues([latestRow]);
+
+  const inventoryData = getAllInventoryData_();
+  refreshCycleCoverageSystem_(inventoryData.currentRows, sheet);
+  console.log('Repaired the latest SL Export opening inventory.');
+  return true;
 }
 
 /**
@@ -6168,7 +6289,8 @@ function cycleCoverageHasAbcColumns_(sheet) {
     .getDisplayValues()[0]
     .map(cleanText_);
   return headers.indexOf('A Good Qty') >= 0 &&
-    headers.indexOf('ABC Mapping Signature') >= 0;
+    headers.indexOf('ABC Mapping Signature') >= 0 &&
+    headers.indexOf('SL_EXPORT Good Qty') >= 0;
 }
 
 /** Updates one Config setting, adding it only when it does not exist. */
@@ -6195,7 +6317,12 @@ function setConfigValue_(sheet, settingName, value) {
 /** Builds the stable column layout for the hidden coverage sheet. */
 function cycleCoverageHeaders_() {
   const headers = ['Date'];
-  const groups = COVERAGE_FACILITIES.concat(['TOTAL']);
+  // Keep the original seven-facility and TOTAL columns in their historical
+  // positions. SL_EXPORT is appended later so enabling the new facility never
+  // shifts or corrupts existing Cycle_Coverage_System rows.
+  const groups = COVERAGE_FACILITIES.filter(function (facility) {
+    return facility !== 'SL_EXPORT';
+  }).concat(['TOTAL']);
 
   groups.forEach(function (facility) {
     headers.push(facility + ' Good Qty');
@@ -6224,6 +6351,17 @@ function cycleCoverageHeaders_() {
     completeHeaders.push(abcClass + ' Cumulative Counted Qty');
   });
   completeHeaders.push('ABC Mapping Signature');
+
+  [
+    'Good Qty',
+    'Daily Counted Qty',
+    'Cumulative Counted Qty',
+    'Completion %',
+    'Bad Qty',
+    'QC Rejected Qty'
+  ].forEach(function (metric) {
+    completeHeaders.push('SL_EXPORT ' + metric);
+  });
 
   return completeHeaders;
 }
@@ -6295,7 +6433,9 @@ function inventoryHeaderIndexes_(headerRow, sheetName) {
     const alternateHeaders = {
       'Item Name': 'Item Type Name',
       'Batch': 'Batch Code',
-      'Vendor Batch Number': 'Vendor Batch Code'
+      'Vendor Batch Number': 'Vendor Batch Code',
+      'Loose': 'LOOSES',
+      'Remark': 'REMARKS'
     };
     if (index < 0 && alternateHeaders[requiredHeader]) {
       index = normalizedHeaders.indexOf(
@@ -6582,6 +6722,10 @@ function b2cCell_(row, index) {
 
 /** Resolves a reporting facility without exposing B2C as a facility. */
 function sourceFacilityName_(sheetName, enteredFacility) {
+  if (sheetName === SL_EXPORT_SOURCE_SHEET_NAME) {
+    return 'SL_EXPORT';
+  }
+
   if (sheetName !== 'B2C') {
     return sheetName;
   }

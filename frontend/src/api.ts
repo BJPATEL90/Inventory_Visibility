@@ -17,7 +17,7 @@ const APPS_SCRIPT_URL = String(
 // Version 2 invalidates browser snapshots created before Top 5 SKU insights.
 const DASHBOARD_SNAPSHOT_KEY = 'inventory-dashboard-snapshot-v2';
 const CONFIG_SNAPSHOT_KEY = 'inventory-config-snapshot-v1';
-const CYCLE_COVERAGE_SNAPSHOT_KEY = 'inventory-cycle-coverage-v2';
+const CYCLE_COVERAGE_SNAPSHOT_KEY = 'inventory-cycle-coverage-v3';
 
 interface StoredSnapshot<T> {
   savedAt: string;

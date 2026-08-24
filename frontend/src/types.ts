@@ -177,7 +177,8 @@ export type CoverageFacilityKey =
   | 'SL_MM'
   | 'SL_LJ'
   | 'SL_BW'
-  | 'OWN';
+  | 'OWN'
+  | 'SL_EXPORT';
 
 export interface CoverageFacilityMetrics {
   goodQuantity: number;

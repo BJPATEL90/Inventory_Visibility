@@ -2272,6 +2272,23 @@ function testCycleCoverageCalculations() {
       systemQuantity: 20
     }
   ], '2026-08-01');
+  const slExportOpening = slExportOpeningFromTransactions_([
+    {
+      facility: 'SL_EXPORT',
+      abcClass: 'A',
+      systemQuantity: 20
+    },
+    {
+      facility: 'SL_EXPORT',
+      abcClass: 'B',
+      systemQuantity: 10
+    },
+    {
+      facility: 'SL_MH',
+      abcClass: 'A',
+      systemQuantity: 999
+    }
+  ]);
 
   assertEqual_(
     parsed.facilities.SL_AMBIENT.goodQuantity,
@@ -2297,6 +2314,21 @@ function testCycleCoverageCalculations() {
   );
   assertEqual_(parsed.facilities.OWN.goodQuantity, 25, 'Exact OWN GOOD');
   assertEqual_(parsed.ignoredFacilityRowCount, 1, 'OWN child exclusion');
+  assertEqual_(
+    slExportOpening.goodQuantity,
+    30,
+    'SL Export opening fallback total'
+  );
+  assertEqual_(
+    slExportOpening.abcGoodQuantities.A,
+    20,
+    'SL Export opening fallback A class'
+  );
+  assertEqual_(
+    slExportOpening.abcGoodQuantities.B,
+    10,
+    'SL Export opening fallback B class'
+  );
   assertEqual_(counts['2026-08-01'].SL_MM, 10, 'Day 1 counted qty');
   assertEqual_(counts['2026-08-02'].SL_MM, 15, 'Day 2 counted qty');
   assertEqual_(
@@ -3686,11 +3718,29 @@ function refreshCycleCoverageSystemSafely_(inventoryRows) {
       sheet = setupCycleCoverageSheet_(spreadsheet);
     }
 
-    // The opening-inventory email can be imported before a newly introduced
-    // facility label is recognized. Time-driven refreshes run with the project
-    // owner's authorization, so they can safely repair that latest denominator
-    // from its stored source URL without requiring a manual sheet edit.
-    repairLatestSlExportOpeningIfMissing_(spreadsheet, sheet);
+    // Prefer the emailed opening inventory. If that export does not contain SL
+    // Export at all, use the read-only SL_Export cycle-count System Quantity as
+    // a facility-only proxy so its counted quantity is not reported as 0%.
+    let slExportOpeningRepaired = false;
+    try {
+      slExportOpeningRepaired = repairLatestSlExportOpeningIfMissing_(
+        spreadsheet,
+        sheet
+      );
+    } catch (repairError) {
+      console.warn(
+        'SL Export email opening repair skipped: ' +
+          (repairError && repairError.message
+            ? repairError.message
+            : repairError)
+      );
+    }
+    if (!slExportOpeningRepaired) {
+      repairLatestSlExportOpeningFromTransactionsIfMissing_(
+        sheet,
+        inventoryRows
+      );
+    }
 
     return refreshCycleCoverageSystem_(inventoryRows, sheet);
   } catch (error) {
@@ -3918,6 +3968,109 @@ function coverageCountedQuantitiesByDate_(inventoryRows, cycleStartDate) {
     );
   });
 
+  return result;
+}
+
+/**
+ * Uses SL_Export System Quantity only when its emailed opening is unavailable.
+ *
+ * This never edits the source sheet. It updates only the latest hidden coverage
+ * snapshot and also adds the same quantity to its A/B/C opening split.
+ */
+function repairLatestSlExportOpeningFromTransactionsIfMissing_(
+  sheet,
+  inventoryRows
+) {
+  if (!sheet || sheet.getLastRow() <= 1) {
+    return false;
+  }
+
+  const headers = sheet
+    .getRange(1, 1, 1, sheet.getLastColumn())
+    .getDisplayValues()[0];
+  const indexes = headerIndexMap_(headers);
+  const requiredHeaders = [
+    'SL_EXPORT Good Qty',
+    'SL_EXPORT Bad Qty',
+    'SL_EXPORT QC Rejected Qty'
+  ];
+  const missingHeader = requiredHeaders.some(function (header) {
+    return indexes[header] === undefined;
+  });
+
+  if (missingHeader) {
+    return false;
+  }
+
+  const latestRowNumber = sheet.getLastRow();
+  const latestRow = sheet
+    .getRange(latestRowNumber, 1, 1, headers.length)
+    .getValues()[0];
+  const storedQuantity = requiredHeaders.reduce(function (total, header) {
+    return total + toNumber_(latestRow[indexes[header]]);
+  }, 0);
+
+  if (storedQuantity > 0) {
+    return false;
+  }
+
+  const opening = slExportOpeningFromTransactions_(inventoryRows);
+  if (opening.goodQuantity <= 0) {
+    return false;
+  }
+
+  latestRow[indexes['SL_EXPORT Good Qty']] = round_(
+    opening.goodQuantity,
+    2
+  );
+  latestRow[indexes['SL_EXPORT Bad Qty']] = 0;
+  latestRow[indexes['SL_EXPORT QC Rejected Qty']] = 0;
+
+  COVERAGE_ABC_CLASSES.forEach(function (abcClass) {
+    const header = abcClass + ' Good Qty';
+    if (indexes[header] !== undefined) {
+      latestRow[indexes[header]] = round_(
+        toNumber_(latestRow[indexes[header]]) +
+          opening.abcGoodQuantities[abcClass],
+        2
+      );
+    }
+  });
+
+  sheet
+    .getRange(latestRowNumber, 1, 1, headers.length)
+    .setValues([latestRow]);
+  console.warn(
+    'SL Export opening inventory used the cycle-count System Quantity proxy.'
+  );
+  return true;
+}
+
+/** Aggregates the SL_Export source rows used by the opening fallback. */
+function slExportOpeningFromTransactions_(inventoryRows) {
+  const result = {
+    goodQuantity: 0,
+    abcGoodQuantities: emptyCoverageAbcNumberMap_()
+  };
+
+  (inventoryRows || []).forEach(function (row) {
+    if (cleanText_(row.facility) !== 'SL_EXPORT') {
+      return;
+    }
+
+    const quantity = Math.max(0, toNumber_(row.systemQuantity));
+    const abcClass = normalizeCoverageAbcClass_(row.abcClass);
+    result.goodQuantity += quantity;
+    result.abcGoodQuantities[abcClass] += quantity;
+  });
+
+  result.goodQuantity = round_(result.goodQuantity, 2);
+  COVERAGE_ABC_CLASSES.forEach(function (abcClass) {
+    result.abcGoodQuantities[abcClass] = round_(
+      result.abcGoodQuantities[abcClass],
+      2
+    );
+  });
   return result;
 }
 

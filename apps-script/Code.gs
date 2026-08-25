@@ -2226,6 +2226,7 @@ function testCycleCoverageCalculations() {
     'SL Ambient,QC_REJECTED,3',
     'SL MM,GOOD_INVENTORY,50',
     'SLLJ,GOOD_INVENTORY,20',
+    'SL_Export,GOOD_INVENTORY,30',
     'OWN,GOOD_INVENTORY,25',
     'OWN B2B,GOOD_INVENTORY,999'
   ].join('\r\n');
@@ -2289,6 +2290,11 @@ function testCycleCoverageCalculations() {
   );
   assertEqual_(parsed.facilities.SL_MM.goodQuantity, 50, 'SL MM GOOD');
   assertEqual_(parsed.facilities.SL_LJ.goodQuantity, 20, 'SLLJ GOOD');
+  assertEqual_(
+    parsed.facilities.SL_EXPORT.goodQuantity,
+    30,
+    'SL_Export GOOD'
+  );
   assertEqual_(parsed.facilities.OWN.goodQuantity, 25, 'Exact OWN GOOD');
   assertEqual_(parsed.ignoredFacilityRowCount, 1, 'OWN child exclusion');
   assertEqual_(counts['2026-08-01'].SL_MM, 10, 'Day 1 counted qty');
@@ -3680,6 +3686,12 @@ function refreshCycleCoverageSystemSafely_(inventoryRows) {
       sheet = setupCycleCoverageSheet_(spreadsheet);
     }
 
+    // The opening-inventory email can be imported before a newly introduced
+    // facility label is recognized. Time-driven refreshes run with the project
+    // owner's authorization, so they can safely repair that latest denominator
+    // from its stored source URL without requiring a manual sheet edit.
+    repairLatestSlExportOpeningIfMissing_(spreadsheet, sheet);
+
     return refreshCycleCoverageSystem_(inventoryRows, sheet);
   } catch (error) {
     console.error(
@@ -4459,6 +4471,7 @@ function parseInventoryExportCsv_(csvText, optionalAbcClassMap) {
 
     const sourceFacility = cleanText_(row[indexes.Facility])
       .toUpperCase()
+      .replace(/[-_]+/g, ' ')
       .replace(/\s+/g, ' ');
     const facility = INVENTORY_EXPORT_FACILITY_MAP[sourceFacility];
 

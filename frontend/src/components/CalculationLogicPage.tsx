@@ -322,7 +322,7 @@ export function CalculationLogicPage({
             <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
               {[
                 ['Current cycle counts', 'Inventory_Dashboard: SL_AMBIENT, SL_MH, SL_RX', 'Current quantity, bin, and value KPIs'],
-                ['External cycle counts', 'Bin wise cycle Count-Q2-JAS: OWN and B2C', 'OWN plus B2C facilities SL_MM, SL_LJ, and SL_BW'],
+                ['External cycle counts', 'Dated source schedule: OWN, B2C, and SL_Export', 'Workbook selected by transaction date; source history is maintained in Settings'],
                 ['Historical cycle counts', 'Inventory_Dashboard: Q1-AMJ26', 'Last Quarter and past-date reporting'],
                 ['Unit cost', 'Inventory_Dashboard: COGS', 'Value KPIs at unit rate excluding GST'],
                 ['SKU classification', 'Inventory_Dashboard: SKU_MASTER', 'A, B, and C drill-down; missing or invalid classes default to C'],
@@ -600,7 +600,7 @@ export function CalculationLogicPage({
             'Undated rows are excluded from dated periods and quarter CSV, except current undated NTF rows included in MTD.',
             'Rows without COGS remain in quantity and bin KPIs but are excluded from value calculations.',
             'BAD_INVENTORY and QC_REJECTED opening quantities are stored but excluded from quantity coverage.',
-            'The backend does not copy external OWN or B2C rows into Inventory_Dashboard and does not create a physical Combine sheet.',
+            'The backend does not copy external OWN, B2C, or SL_Export rows into Inventory_Dashboard and does not create a physical Combine sheet.',
             'A zero denominator returns 0% instead of an error.'
           ].map((item) => (
             <li

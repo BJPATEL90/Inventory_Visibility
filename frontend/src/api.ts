@@ -6,9 +6,11 @@ import type {
   DashboardConfig,
   DashboardData,
   DashboardRefreshResult,
+  SourceSettingsData,
   SkuMasterRow,
   TransactionPageData,
-  TransactionQuery
+  TransactionQuery,
+  UpdateSourceSettingsInput
 } from './types';
 
 const APPS_SCRIPT_URL = String(
@@ -119,6 +121,51 @@ async function request<T>(
   return payload;
 }
 
+async function postRequest<T>(
+  action: string,
+  payload: Record<string, unknown>
+): Promise<ApiResponse<T>> {
+  if (!APPS_SCRIPT_URL) {
+    throw new Error(
+      'VITE_APPS_SCRIPT_URL is missing. Create frontend/.env.local and add your Apps Script Web App URL.'
+    );
+  }
+
+  const response = await fetch(APPS_SCRIPT_URL, {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'text/plain;charset=UTF-8'
+    },
+    body: JSON.stringify({ action, ...payload }),
+    redirect: 'follow',
+    cache: 'no-store'
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      `The Apps Script request failed with status ${response.status}.`
+    );
+  }
+
+  const responseText = await response.text();
+  let responsePayload: ApiResponse<T>;
+  try {
+    responsePayload = JSON.parse(responseText) as ApiResponse<T>;
+  } catch {
+    throw new Error(
+      'The Apps Script URL did not return JSON. Check the Web App deployment.'
+    );
+  }
+
+  if (!responsePayload.success) {
+    throw new Error(
+      responsePayload.message || 'The Apps Script settings request failed.'
+    );
+  }
+  return responsePayload;
+}
+
 export function getCachedDashboard() {
   return readSnapshot<DashboardData>(DASHBOARD_SNAPSHOT_KEY);
 }
@@ -214,6 +261,18 @@ export async function getConfig() {
   const response = await request<DashboardConfig>('config');
   saveSnapshot(CONFIG_SNAPSHOT_KEY, response);
   return response;
+}
+
+export function getSourceSettings() {
+  return request<SourceSettingsData>('sourceSettings');
+}
+
+export function updateSourceSettings(input: UpdateSourceSettingsInput) {
+  return postRequest<SourceSettingsData>('updateSourceSettings', {
+    spreadsheetReference: input.spreadsheetReference,
+    effectiveFrom: input.effectiveFrom,
+    idToken: input.idToken
+  });
 }
 
 /** Removes saved dashboard responses when a person logs out. */

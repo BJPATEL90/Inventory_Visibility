@@ -170,6 +170,41 @@ export interface DashboardConfig {
   inventoryExportName: string;
 }
 
+export interface SourceRegistryEntry {
+  effectiveFrom: string;
+  effectiveUntil: string;
+  spreadsheetId: string;
+  spreadsheetName: string;
+  spreadsheetUrl: string;
+  updatedBy: string;
+  updatedAt: string;
+}
+
+export interface SourceSettingsData {
+  today: string;
+  suggestedEffectiveFrom: string;
+  sourceSheets: string[];
+  activeSource: SourceRegistryEntry | null;
+  schedule: SourceRegistryEntry[];
+  note: string;
+  saved?: boolean;
+  message?: string;
+  savedSource?: {
+    effectiveFrom: string;
+    spreadsheetId: string;
+    spreadsheetName: string;
+    spreadsheetUrl: string;
+    validatedSheets: string[];
+    updatedBy: string;
+  };
+}
+
+export interface UpdateSourceSettingsInput {
+  spreadsheetReference: string;
+  effectiveFrom: string;
+  idToken: string;
+}
+
 export type CoverageFacilityKey =
   | 'SL_AMBIENT'
   | 'SL_MH'

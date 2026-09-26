@@ -77,8 +77,12 @@ opening quantity and coverage percentage. `BAD_INVENTORY` and `QC_REJECTED`
 quantities are stored separately for audit but are not displayed and never
 enter the completion calculation.
 
-The daily cycle-count source tab is `B2C` in the separate
+The daily cycle-count source tab is `B2C` in the separate cycle-count
+workbook. The initial entry is the
 [Bin wise cycle Count-Q2-JAS workbook](https://docs.google.com/spreadsheets/d/1_kBrwiM6ezFeE5kJFqeCMKcl7p_pe_XpNuVYhUmkUpw/edit?gid=2112925392).
+Later workbooks are scheduled from the frontend **Settings** page with an
+effective date. The backend keeps a dated source history, so a 1 October
+cutover does not discard July-September rows.
 It is only a parent sheet name. Its `Facility` column must contain `SL_MM`,
 `SL_LJ`/`SLLJ`, or `SL_BW`. `B2C` itself is never displayed as a facility. Blank
 or unsupported values are skipped and listed by
@@ -91,9 +95,27 @@ columns; `Shelf` remains the unique bin identifier for B2C reporting. Only
 `Pack`, `Box`, `Loose`, SKU-description, batch, and difference columns are
 treated as optional instead of rejecting the complete B2C source.
 
-The `OWN` tab in the same external workbook is the authoritative OWN
+The `OWN` tab in the external workbook active for the transaction date is the authoritative OWN
 cycle-count source. It uses the standard Date/Rack/SKU/Shelf/Phy/Sys/Diff
 layout. The header-only OWN tab inside `Inventory_Dashboard` is not used.
+
+### Source workbook settings
+
+The **Settings > Cycle-count source** page accepts either a Google Sheets URL
+or spreadsheet ID and an **Effective from** date. Before saving, Apps Script:
+
+- verifies the signed-in Google ID token belongs to `mosaicwellness.in`;
+- confirms the workbook is accessible to the Apps Script owner;
+- confirms the `B2C`, `OWN`, and `SL_Export` tabs and required headers exist;
+- stores the dated source in the hidden `Source_Registry` sheet; and
+- clears the dashboard summary cache so an active change is rebuilt.
+
+Rows are selected by transaction date. The preceding source remains valid up
+to the day before the next source starts. Undated external rows are read only
+from the latest scheduled source to prevent duplication.
+
+To inspect the history in Google Sheets, open **View > Hidden sheets >
+Source_Registry**. Do not edit it manually; use the frontend Settings page.
 
 This is separate from the daily inventory CSV. The CSV contains the facility
 names `SL MM`, `SLLJ`, and `SL BW`; it is not expected to contain a facility
@@ -713,6 +735,12 @@ saved browser data; it does not sign the person out of Gmail or other Google
 services. This frontend sign-in improves normal access control and usability,
 but it does not make an Apps Script endpoint deployed as **Anyone** private.
 
+The one frontend write operation, `updateSourceSettings`, is different: the
+backend independently verifies the Google ID token, OAuth client ID, expiry,
+verified email, and `mosaicwellness.in` hosted domain before changing the
+source registry. Read-only GET endpoints remain public under the current Web
+App deployment model.
+
 If the inventory data must be limited to named users or a Google Workspace
 domain, do not publish this version as a public Web App. Add proper
 authentication in a later security phase.
@@ -723,6 +751,7 @@ Replace `YOUR_WEB_APP_URL` with the copied `/exec` URL:
 
 ```text
 YOUR_WEB_APP_URL?action=config
+YOUR_WEB_APP_URL?action=sourceSettings
 YOUR_WEB_APP_URL?action=dashboard
 YOUR_WEB_APP_URL?action=transactions&startDate=2026-08-01&endDate=2026-08-03&page=1&pageSize=25
 YOUR_WEB_APP_URL?action=facilityDashboard&facility=SL_MH

@@ -25,6 +25,18 @@ const B2C_SOURCE_SPREADSHEET_ID =
 const B2C_SOURCE_SHEET_NAME = 'B2C';
 const OWN_SOURCE_SHEET_NAME = 'OWN';
 const SL_EXPORT_SOURCE_SHEET_NAME = 'SL_Export';
+const SOURCE_REGISTRY_SHEET_NAME = 'Source_Registry';
+const SOURCE_REGISTRY_HEADERS = [
+  'Effective From',
+  'Spreadsheet ID',
+  'Spreadsheet Name',
+  'Updated By',
+  'Updated At'
+];
+const DEFAULT_SOURCE_EFFECTIVE_FROM = '2026-07-01';
+const GOOGLE_OAUTH_CLIENT_ID =
+  '1021762366002-nsjs0p1e38ilkm3cogaagu03kdbm0s32.apps.googleusercontent.com';
+const GOOGLE_ALLOWED_DOMAIN = 'mosaicwellness.in';
 
 const SOURCE_SHEETS = [
   'SL_AMBIENT',
@@ -184,6 +196,7 @@ let TIME_ZONE_CACHE = '';
  * ?action=binMaster
  * ?action=skuMaster
  * ?action=config
+ * ?action=sourceSettings
  * ?action=activityStatus&date=2026-07-23
  */
 function doGet(e) {
@@ -210,6 +223,8 @@ function doGet(e) {
       data = getSkuMaster();
     } else if (action === 'config') {
       data = getConfig();
+    } else if (action === 'sourcesettings') {
+      data = getSourceSettings();
     } else if (action === 'session') {
       data = getSessionUser();
     } else if (action === 'activitystatus') {
@@ -226,7 +241,7 @@ function doGet(e) {
       data = getOwnSourceAudit();
     } else {
       throw new Error(
-        'Unknown action. Use dashboard, refreshDashboard, transactions, transactionsCsv, facilityDashboard, binMaster, skuMaster, config, session, activityStatus, cycleCoverage, ensureCoverageAutomation, b2cSourceAudit, facilitySourceAudit, or ownSourceAudit.'
+        'Unknown action. Use dashboard, refreshDashboard, transactions, transactionsCsv, facilityDashboard, binMaster, skuMaster, config, sourceSettings, session, activityStatus, cycleCoverage, ensureCoverageAutomation, b2cSourceAudit, facilitySourceAudit, or ownSourceAudit.'
       );
     }
 
@@ -258,6 +273,7 @@ function setupApplication() {
   setupConfigSheet_(spreadsheet);
   setupActivityStatusSheet_(spreadsheet);
   setupCycleCoverageSheet_(spreadsheet);
+  setupSourceRegistrySheet_(spreadsheet);
 
   const triggerResult = createRefreshTrigger();
   const emailTriggerResult = createDailyEmailTrigger();
@@ -394,6 +410,377 @@ function getConfig() {
   };
 }
 
+/** Returns the dated cycle-count source schedule shown in Settings. */
+function getSourceSettings() {
+  const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
+  setupSourceRegistrySheet_(spreadsheet);
+  const schedule = readSourceRegistry_(spreadsheet);
+  const today = Utilities.formatDate(
+    new Date(),
+    spreadsheet.getSpreadsheetTimeZone(),
+    'yyyy-MM-dd'
+  );
+  let activeSource = null;
+
+  schedule.forEach(function (source) {
+    if (source.effectiveFrom <= today) {
+      activeSource = source;
+    }
+  });
+  if (!activeSource && schedule.length > 0) {
+    activeSource = schedule[0];
+  }
+
+  return {
+    today: today,
+    suggestedEffectiveFrom: nextQuarterStartIso_(today),
+    sourceSheets: [
+      B2C_SOURCE_SHEET_NAME,
+      OWN_SOURCE_SHEET_NAME,
+      SL_EXPORT_SOURCE_SHEET_NAME
+    ],
+    activeSource: activeSource,
+    schedule: schedule,
+    note:
+      'A dated source change preserves rows from earlier workbooks. ' +
+      'B2C, OWN, and SL_Export are read from the workbook active for each date.'
+  };
+}
+
+/** Validates and stores one dated cycle-count source workbook. */
+function updateSourceSettings_(request, user) {
+  const spreadsheetReference = cleanText_(request.spreadsheetReference);
+  const spreadsheetId = extractSpreadsheetId_(spreadsheetReference);
+  const effectiveFrom = cleanText_(request.effectiveFrom);
+
+  if (!spreadsheetId) {
+    throw new Error('Enter a valid Google Sheets URL or spreadsheet ID.');
+  }
+  if (!parseIsoDate_(effectiveFrom)) {
+    throw new Error('Effective From must use yyyy-MM-dd.');
+  }
+
+  let sourceSpreadsheet;
+  try {
+    sourceSpreadsheet = SpreadsheetApp.openById(spreadsheetId);
+  } catch (error) {
+    throw new Error(
+      'The source spreadsheet could not be opened. Confirm the link and ' +
+      'share the file with the Apps Script owner.'
+    );
+  }
+
+  const validation = validateCycleCountSourceWorkbook_(sourceSpreadsheet);
+  if (!validation.valid) {
+    throw new Error(
+      'The source workbook is not ready: ' + validation.errors.join(' ')
+    );
+  }
+
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(10000)) {
+    throw new Error('Source settings are being updated. Please try again.');
+  }
+
+  try {
+    const dashboardSpreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sheet = setupSourceRegistrySheet_(dashboardSpreadsheet);
+    const values = sheet.getLastRow() > 1
+      ? sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getValues()
+      : [];
+    let targetRow = sheet.getLastRow() + 1;
+
+    values.forEach(function (row, index) {
+      const rowDate = normalizeDate_(
+        row[0],
+        dashboardSpreadsheet.getSpreadsheetTimeZone()
+      );
+      if (rowDate === effectiveFrom) {
+        targetRow = index + 2;
+      }
+    });
+
+    sheet.getRange(targetRow, 1, 1, SOURCE_REGISTRY_HEADERS.length)
+      .setValues([[
+        effectiveFrom,
+        spreadsheetId,
+        sourceSpreadsheet.getName(),
+        user.email,
+        new Date()
+      ]]);
+    sheet.getRange(targetRow, 1).setNumberFormat('yyyy-mm-dd');
+    sheet.getRange(targetRow, 5).setNumberFormat('yyyy-mm-dd hh:mm:ss');
+    sortSourceRegistry_(sheet);
+
+    CacheService.getScriptCache().remove(DASHBOARD_CACHE_KEY);
+    PropertiesService.getScriptProperties().setProperty(
+      'INVENTORY_SOURCE_SETTINGS_LAST_UPDATED',
+      new Date().toISOString()
+    );
+  } finally {
+    lock.releaseLock();
+  }
+
+  const result = getSourceSettings();
+  result.saved = true;
+  result.savedSource = {
+    effectiveFrom: effectiveFrom,
+    spreadsheetId: spreadsheetId,
+    spreadsheetName: sourceSpreadsheet.getName(),
+    spreadsheetUrl:
+      'https://docs.google.com/spreadsheets/d/' + spreadsheetId + '/edit',
+    validatedSheets: validation.foundSheets,
+    updatedBy: user.email
+  };
+  result.message =
+    'Source workbook saved. Use Refresh after the effective date to publish ' +
+    'its rows.';
+  return result;
+}
+
+/** Creates the hidden, system-managed source history table. */
+function setupSourceRegistrySheet_(spreadsheet) {
+  const sheet = spreadsheet.getSheetByName(SOURCE_REGISTRY_SHEET_NAME) ||
+    spreadsheet.insertSheet(SOURCE_REGISTRY_SHEET_NAME);
+
+  ensureHeader_(sheet, SOURCE_REGISTRY_HEADERS);
+  if (sheet.getLastRow() <= 1) {
+    let sourceName = 'Cycle-count source workbook';
+    try {
+      sourceName = SpreadsheetApp.openById(B2C_SOURCE_SPREADSHEET_ID).getName();
+    } catch (error) {
+      console.warn('The default cycle-count workbook name was unavailable.');
+    }
+    sheet.getRange(2, 1, 1, SOURCE_REGISTRY_HEADERS.length).setValues([[
+      DEFAULT_SOURCE_EFFECTIVE_FROM,
+      B2C_SOURCE_SPREADSHEET_ID,
+      sourceName,
+      'System migration',
+      new Date()
+    ]]);
+  }
+
+  styleSetupSheet_(sheet, SOURCE_REGISTRY_HEADERS.length);
+  sheet.getRange('A:A').setNumberFormat('yyyy-mm-dd');
+  sheet.getRange('E:E').setNumberFormat('yyyy-mm-dd hh:mm:ss');
+  sortSourceRegistry_(sheet);
+  if (!sheet.isSheetHidden()) {
+    sheet.hideSheet();
+  }
+  return sheet;
+}
+
+/** Reads, deduplicates, and dates every configured source workbook. */
+function readSourceRegistry_(optionalSpreadsheet) {
+  const spreadsheet = optionalSpreadsheet ||
+    SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = spreadsheet.getSheetByName(SOURCE_REGISTRY_SHEET_NAME) ||
+    setupSourceRegistrySheet_(spreadsheet);
+  const timeZone = spreadsheet.getSpreadsheetTimeZone();
+  const byEffectiveDate = {};
+
+  if (sheet.getLastRow() > 1) {
+    sheet.getRange(
+      2,
+      1,
+      sheet.getLastRow() - 1,
+      SOURCE_REGISTRY_HEADERS.length
+    ).getValues().forEach(function (row) {
+      const effectiveFrom = normalizeDate_(row[0], timeZone);
+      const spreadsheetId = extractSpreadsheetId_(row[1]);
+      if (!effectiveFrom || !spreadsheetId) {
+        return;
+      }
+      byEffectiveDate[effectiveFrom] = {
+        effectiveFrom: effectiveFrom,
+        effectiveUntil: '',
+        spreadsheetId: spreadsheetId,
+        spreadsheetName: cleanText_(row[2]) || 'Google Sheets source',
+        spreadsheetUrl:
+          'https://docs.google.com/spreadsheets/d/' + spreadsheetId + '/edit',
+        updatedBy: cleanText_(row[3]),
+        updatedAt: row[4] instanceof Date
+          ? row[4].toISOString()
+          : cleanText_(row[4])
+      };
+    });
+  }
+
+  const schedule = Object.keys(byEffectiveDate)
+    .sort()
+    .map(function (effectiveFrom) {
+      return byEffectiveDate[effectiveFrom];
+    });
+
+  schedule.forEach(function (source, index) {
+    const nextSource = schedule[index + 1];
+    source.effectiveUntil = nextSource
+      ? previousIsoDate_(nextSource.effectiveFrom)
+      : '';
+  });
+  return schedule;
+}
+
+/** Returns every dated source with an opened spreadsheet connection. */
+function getCycleCountSourceSchedule_() {
+  const registry = readSourceRegistry_();
+  return registry.map(function (source, index) {
+    return {
+      effectiveFrom: source.effectiveFrom,
+      effectiveUntil: source.effectiveUntil,
+      spreadsheetId: source.spreadsheetId,
+      spreadsheet: SpreadsheetApp.openById(source.spreadsheetId),
+      isLatest: index === registry.length - 1
+    };
+  });
+}
+
+/** Opens the source active today for diagnostics and manual tests. */
+function getActiveCycleCountSourceSpreadsheet_() {
+  const schedule = getCycleCountSourceSchedule_();
+  const today = Utilities.formatDate(new Date(), getTimeZone_(), 'yyyy-MM-dd');
+  let active = schedule[0];
+  schedule.forEach(function (source) {
+    if (source.effectiveFrom <= today) {
+      active = source;
+    }
+  });
+  return active
+    ? active.spreadsheet
+    : SpreadsheetApp.openById(B2C_SOURCE_SPREADSHEET_ID);
+}
+
+/** Checks the tabs and headers required by the external cycle-count reader. */
+function validateCycleCountSourceWorkbook_(spreadsheet) {
+  const foundSheets = [];
+  const errors = [];
+
+  [
+    B2C_SOURCE_SHEET_NAME,
+    OWN_SOURCE_SHEET_NAME,
+    SL_EXPORT_SOURCE_SHEET_NAME
+  ].forEach(function (sheetName) {
+    const sheet = spreadsheet.getSheetByName(sheetName);
+    if (!sheet) {
+      errors.push('Missing tab "' + sheetName + '".');
+      return;
+    }
+    foundSheets.push(sheetName);
+    if (sheet.getLastColumn() === 0) {
+      errors.push('Tab "' + sheetName + '" has no header row.');
+      return;
+    }
+    const headers = sheet
+      .getRange(1, 1, 1, sheet.getLastColumn())
+      .getDisplayValues()[0];
+    try {
+      if (sheetName === B2C_SOURCE_SHEET_NAME) {
+        b2cHeaderIndexes_(headers);
+      } else {
+        inventoryHeaderIndexes_(headers, sheetName);
+      }
+    } catch (error) {
+      errors.push(error && error.message ? error.message : String(error));
+    }
+  });
+
+  return {
+    valid: errors.length === 0,
+    foundSheets: foundSheets,
+    errors: errors
+  };
+}
+
+/** Parses and verifies the Google sign-in token used for a settings write. */
+function verifyGoogleIdToken_(rawToken) {
+  const token = cleanText_(rawToken);
+  if (!token) {
+    throw new Error('Your Google session has expired. Sign out and sign in again.');
+  }
+
+  const response = UrlFetchApp.fetch(
+    'https://oauth2.googleapis.com/tokeninfo?id_token=' +
+      encodeURIComponent(token),
+    { muteHttpExceptions: true }
+  );
+  if (response.getResponseCode() !== 200) {
+    throw new Error('Google could not verify this settings request.');
+  }
+
+  const claims = JSON.parse(response.getContentText());
+  const email = cleanText_(claims.email).toLowerCase();
+  const domain = email.split('@')[1] || '';
+  const verified = claims.email_verified === true ||
+    String(claims.email_verified).toLowerCase() === 'true';
+
+  if (
+    claims.aud !== GOOGLE_OAUTH_CLIENT_ID ||
+    !verified ||
+    !email ||
+    domain !== GOOGLE_ALLOWED_DOMAIN
+  ) {
+    throw new Error('Only a verified Mosaic Wellness account can change sources.');
+  }
+  if (Number(claims.exp || 0) * 1000 <= Date.now()) {
+    throw new Error('Your Google session has expired. Sign out and sign in again.');
+  }
+
+  return { email: email };
+}
+
+/** Reads a text/plain JSON POST without allowing malformed fallback values. */
+function parseJsonPost_(e) {
+  const contents = e && e.postData ? e.postData.contents : '';
+  if (!contents) {
+    throw new Error('The settings request body is empty.');
+  }
+  try {
+    return JSON.parse(contents);
+  } catch (error) {
+    throw new Error('The settings request body is not valid JSON.');
+  }
+}
+
+/** Accepts either a Google Sheets URL or the raw spreadsheet ID. */
+function extractSpreadsheetId_(value) {
+  const text = cleanText_(value);
+  const urlMatch = text.match(/\/spreadsheets\/d\/([A-Za-z0-9_-]+)/);
+  if (urlMatch) {
+    return urlMatch[1];
+  }
+  return /^[A-Za-z0-9_-]{20,}$/.test(text) ? text : '';
+}
+
+/** Keeps the hidden source table ordered by its activation date. */
+function sortSourceRegistry_(sheet) {
+  if (sheet.getLastRow() > 2) {
+    sheet.getRange(
+      2,
+      1,
+      sheet.getLastRow() - 1,
+      SOURCE_REGISTRY_HEADERS.length
+    ).sort({ column: 1, ascending: true });
+  }
+}
+
+/** Returns the prior calendar date for a yyyy-MM-dd value. */
+function previousIsoDate_(value) {
+  const date = parseIsoDate_(value);
+  if (!date) {
+    return '';
+  }
+  date.setDate(date.getDate() - 1);
+  return Utilities.formatDate(date, getTimeZone_(), 'yyyy-MM-dd');
+}
+
+/** Suggests the first date of the next calendar quarter. */
+function nextQuarterStartIso_(value) {
+  const date = parseIsoDate_(value) || new Date();
+  const nextQuarterMonth = Math.floor(date.getMonth() / 3) * 3 + 3;
+  const nextQuarter = new Date(date.getFullYear(), nextQuarterMonth, 1);
+  return Utilities.formatDate(nextQuarter, getTimeZone_(), 'yyyy-MM-dd');
+}
+
 /**
  * Returns the Google account identity visible to this Web App execution.
  *
@@ -438,115 +825,55 @@ function getCombinedData(
   const abcClassMap = optionalAbcClassMap || {};
   const timeZone = getTimeZone_();
   const skippedB2cFacilityRows = [];
-  const externalCycleSpreadsheet = SpreadsheetApp.openById(
-    B2C_SOURCE_SPREADSHEET_ID
-  );
-
-  SOURCE_SHEETS.forEach(function (sheetName) {
-    if (sheetName === B2C_SOURCE_SHEET_NAME) {
-      const b2cResult = readB2cCombinedRows_(
+  ['SL_AMBIENT', 'SL_MH', 'SL_RX'].forEach(function (sheetName) {
+    Array.prototype.push.apply(
+      combinedRows,
+      readStandardSourceRows_(
+        spreadsheet,
+        sheetName,
         costMap,
         abcClassMap,
         timeZone,
-        externalCycleSpreadsheet
-      );
-      Array.prototype.push.apply(combinedRows, b2cResult.rows);
-      Array.prototype.push.apply(
-        skippedB2cFacilityRows,
-        b2cResult.skippedFacilityRowNumbers
-      );
-      return;
-    }
+        ''
+      )
+    );
+  });
 
-    const sourceSpreadsheet = [
-      OWN_SOURCE_SHEET_NAME,
-      SL_EXPORT_SOURCE_SHEET_NAME
-    ].indexOf(sheetName) >= 0
-      ? externalCycleSpreadsheet
-      : spreadsheet;
-    const sheet = sourceSpreadsheet.getSheetByName(sheetName);
+  getCycleCountSourceSchedule_().forEach(function (source) {
+    const sourcePrefix = source.spreadsheetId.slice(0, 10) + '-';
+    const b2cResult = readB2cCombinedRows_(
+      costMap,
+      abcClassMap,
+      timeZone,
+      source.spreadsheet,
+      sourcePrefix
+    );
+    const sourceRows = b2cResult.rows;
 
-    if (!sheet || sheet.getLastRow() <= 1 || sheet.getLastColumn() === 0) {
-      return;
-    }
-
-    const values = sheet
-      .getRange(1, 1, sheet.getLastRow(), sheet.getLastColumn())
-      .getValues();
-    const indexes = inventoryHeaderIndexes_(values[0], sheetName);
-
-    for (let rowIndex = 1; rowIndex < values.length; rowIndex += 1) {
-      const row = values[rowIndex];
-
-      if (inventoryRowIsBlank_(row, indexes)) {
-        continue;
+    [OWN_SOURCE_SHEET_NAME, SL_EXPORT_SOURCE_SHEET_NAME].forEach(
+      function (sheetName) {
+        Array.prototype.push.apply(
+          sourceRows,
+          readStandardSourceRows_(
+            source.spreadsheet,
+            sheetName,
+            costMap,
+            abcClassMap,
+            timeZone,
+            sourcePrefix
+          )
+        );
       }
+    );
 
-      const facility = sourceFacilityName_(
-        sheetName,
-        indexes.Facility === undefined
-          ? ''
-          : row[indexes.Facility]
-      );
-
-      if (!facility) {
-        continue;
-      }
-
-      const physicalQuantity = toNumber_(row[indexes['Phy']]);
-      const systemQuantity = toNumber_(row[indexes['Sys']]);
-      const rawDifference = row[indexes['Diff']];
-      const difference = isBlank_(rawDifference)
-        ? physicalQuantity - systemQuantity
-        : toNumber_(rawDifference);
-      const skuCode = cleanText_(row[indexes['Sku Code']]);
-      const normalizedSku = normalizeSku_(skuCode);
-      const costRecord =
-        normalizedSku &&
-        Object.prototype.hasOwnProperty.call(costMap, normalizedSku)
-          ? costMap[normalizedSku]
-          : null;
-      const unitCost = costRecord ? costRecord.unitCost : null;
-      const abcClass = normalizedSku && abcClassMap[normalizedSku]
-        ? abcClassMap[normalizedSku]
-        : 'C';
-
-      combinedRows.push(normalizeNtfShortage_({
-        id: sheetName + '-' + String(rowIndex + 1),
-        sourceType: 'current',
-        sourceSheet: sheetName,
-        facility: facility,
-        date: normalizeDate_(row[indexes['Date']], timeZone),
-        rack: cleanText_(row[indexes['Rack']]),
-        skuCode: skuCode,
-        abcClass: abcClass,
-        itemName: cleanText_(row[indexes['Item Name']]),
-        shelf: cleanText_(row[indexes['Shelf']]),
-        batch: cleanText_(row[indexes['Batch']]),
-        vendorBatchNumber: cleanText_(
-          row[indexes['Vendor Batch Number']]
-        ),
-        pack: toNumber_(row[indexes['Pack']]),
-        box: toNumber_(row[indexes['Box']]),
-        loose: toNumber_(row[indexes['Loose']]),
-        physicalQuantity: physicalQuantity,
-        systemQuantity: systemQuantity,
-        difference: difference,
-        costAvailable: unitCost !== null,
-        unitCost: unitCost,
-        gstRate: costRecord ? costRecord.gstRate : null,
-        systemValue: unitCost === null
-          ? null
-          : round_(systemQuantity * unitCost, 2),
-        physicalValue: unitCost === null
-          ? null
-          : round_(physicalQuantity * unitCost, 2),
-        differenceValue: unitCost === null
-          ? null
-          : round_(difference * unitCost, 2),
-        remark: cleanText_(row[indexes['Remark']])
-      }));
-    }
+    Array.prototype.push.apply(
+      combinedRows,
+      filterRowsForSourceWindow_(sourceRows, source)
+    );
+    Array.prototype.push.apply(
+      skippedB2cFacilityRows,
+      b2cResult.skippedFacilityRowNumbers
+    );
   });
 
   if (skippedB2cFacilityRows.length > 0) {
@@ -561,6 +888,105 @@ function getCombinedData(
   return combinedRows;
 }
 
+/** Reads one standard-layout facility tab without changing the source. */
+function readStandardSourceRows_(
+  spreadsheet,
+  sheetName,
+  costMap,
+  abcClassMap,
+  timeZone,
+  idPrefix
+) {
+  const sheet = spreadsheet.getSheetByName(sheetName);
+  const rows = [];
+  if (!sheet || sheet.getLastRow() <= 1 || sheet.getLastColumn() === 0) {
+    return rows;
+  }
+
+  const values = sheet
+    .getRange(1, 1, sheet.getLastRow(), sheet.getLastColumn())
+    .getValues();
+  const indexes = inventoryHeaderIndexes_(values[0], sheetName);
+
+  for (let rowIndex = 1; rowIndex < values.length; rowIndex += 1) {
+    const row = values[rowIndex];
+    if (inventoryRowIsBlank_(row, indexes)) {
+      continue;
+    }
+
+    const facility = sourceFacilityName_(
+      sheetName,
+      indexes.Facility === undefined ? '' : row[indexes.Facility]
+    );
+    if (!facility) {
+      continue;
+    }
+
+    const physicalQuantity = toNumber_(row[indexes.Phy]);
+    const systemQuantity = toNumber_(row[indexes.Sys]);
+    const rawDifference = row[indexes.Diff];
+    const difference = isBlank_(rawDifference)
+      ? physicalQuantity - systemQuantity
+      : toNumber_(rawDifference);
+    const skuCode = cleanText_(row[indexes['Sku Code']]);
+    const normalizedSku = normalizeSku_(skuCode);
+    const costRecord = normalizedSku &&
+      Object.prototype.hasOwnProperty.call(costMap, normalizedSku)
+        ? costMap[normalizedSku]
+        : null;
+    const unitCost = costRecord ? costRecord.unitCost : null;
+    const abcClass = normalizedSku && abcClassMap[normalizedSku]
+      ? abcClassMap[normalizedSku]
+      : 'C';
+
+    rows.push(normalizeNtfShortage_({
+      id: (idPrefix || '') + sheetName + '-' + String(rowIndex + 1),
+      sourceType: 'current',
+      sourceSheet: sheetName,
+      facility: facility,
+      date: normalizeDate_(row[indexes.Date], timeZone),
+      rack: cleanText_(row[indexes.Rack]),
+      skuCode: skuCode,
+      abcClass: abcClass,
+      itemName: cleanText_(row[indexes['Item Name']]),
+      shelf: cleanText_(row[indexes.Shelf]),
+      batch: cleanText_(row[indexes.Batch]),
+      vendorBatchNumber: cleanText_(row[indexes['Vendor Batch Number']]),
+      pack: toNumber_(row[indexes.Pack]),
+      box: toNumber_(row[indexes.Box]),
+      loose: toNumber_(row[indexes.Loose]),
+      physicalQuantity: physicalQuantity,
+      systemQuantity: systemQuantity,
+      difference: difference,
+      costAvailable: unitCost !== null,
+      unitCost: unitCost,
+      gstRate: costRecord ? costRecord.gstRate : null,
+      systemValue: unitCost === null
+        ? null
+        : round_(systemQuantity * unitCost, 2),
+      physicalValue: unitCost === null
+        ? null
+        : round_(physicalQuantity * unitCost, 2),
+      differenceValue: unitCost === null
+        ? null
+        : round_(difference * unitCost, 2),
+      remark: cleanText_(row[indexes.Remark])
+    }));
+  }
+  return rows;
+}
+
+/** Keeps each workbook responsible only for dates in its registry window. */
+function filterRowsForSourceWindow_(rows, source) {
+  return rows.filter(function (row) {
+    if (!row.date) {
+      return source.isLatest;
+    }
+    return row.date >= source.effectiveFrom &&
+      (!source.effectiveUntil || row.date <= source.effectiveUntil);
+  });
+}
+
 /**
  * Reads the B2C parent tab from its separate cycle-count workbook.
  *
@@ -572,10 +998,11 @@ function readB2cCombinedRows_(
   costMap,
   abcClassMap,
   timeZone,
-  optionalSpreadsheet
+  optionalSpreadsheet,
+  optionalIdPrefix
 ) {
   const spreadsheet = optionalSpreadsheet ||
-    SpreadsheetApp.openById(B2C_SOURCE_SPREADSHEET_ID);
+    getActiveCycleCountSourceSpreadsheet_();
   const sheet = spreadsheet.getSheetByName(B2C_SOURCE_SHEET_NAME);
 
   if (!sheet || sheet.getLastRow() <= 1 || sheet.getLastColumn() === 0) {
@@ -625,7 +1052,8 @@ function readB2cCombinedRows_(
       : 'C';
 
     rows.push({
-      id: B2C_SOURCE_SHEET_NAME + '-' + String(rowIndex + 1),
+      id: (optionalIdPrefix || '') +
+        B2C_SOURCE_SHEET_NAME + '-' + String(rowIndex + 1),
       sourceType: 'current',
       sourceSheet: B2C_SOURCE_SHEET_NAME,
       facility: facility,
@@ -2041,6 +2469,41 @@ function sendInventoryEmail() {
   }
 }
 
+/**
+ * Authenticated write endpoint used only by the frontend Settings page.
+ *
+ * The Web App remains publicly readable for dashboard delivery, so every
+ * mutation verifies a Google ID token and the Mosaic Wellness hosted domain.
+ */
+function doPost(e) {
+  try {
+    const request = parseJsonPost_(e);
+    const action = cleanText_(request.action).toLowerCase();
+    let data;
+
+    if (action === 'updatesourcesettings') {
+      const user = verifyGoogleIdToken_(request.idToken);
+      data = updateSourceSettings_(request, user);
+    } else {
+      throw new Error('Unknown write action. Use updateSourceSettings.');
+    }
+
+    return jsonResponse_({
+      success: true,
+      data: data,
+      lastRefreshTime: getLastRefreshTime_()
+    });
+  } catch (error) {
+    console.error(error);
+    return jsonResponse_({
+      success: false,
+      message: error && error.message
+        ? error.message
+        : 'Unable to update dashboard settings.'
+    });
+  }
+}
+
 /** Builds and sends one report, while preventing duplicate report dates. */
 function sendInventoryEmail_() {
   const config = getConfig();
@@ -2535,7 +2998,7 @@ function testInventoryEmailSearch() {
  * easy to diagnose without editing or exposing cycle-count transactions.
  */
 function getB2cSourceAudit() {
-  const spreadsheet = SpreadsheetApp.openById(B2C_SOURCE_SPREADSHEET_ID);
+  const spreadsheet = getActiveCycleCountSourceSpreadsheet_();
   const sheet = spreadsheet.getSheetByName(B2C_SOURCE_SHEET_NAME);
 
   if (!sheet) {
@@ -2665,7 +3128,7 @@ function getB2cSourceAudit() {
 
 /** Returns safe aggregate diagnostics for the external OWN cycle-count tab. */
 function getOwnSourceAudit() {
-  const spreadsheet = SpreadsheetApp.openById(B2C_SOURCE_SPREADSHEET_ID);
+  const spreadsheet = getActiveCycleCountSourceSpreadsheet_();
   const sheet = spreadsheet.getSheetByName(OWN_SOURCE_SHEET_NAME);
 
   if (!sheet) {
@@ -2780,7 +3243,7 @@ function getOwnSourceAudit() {
  * SL_BW rows can be loaded.
  */
 function testB2cFacilityMapping() {
-  const spreadsheet = SpreadsheetApp.openById(B2C_SOURCE_SPREADSHEET_ID);
+  const spreadsheet = getActiveCycleCountSourceSpreadsheet_();
   const sheet = spreadsheet.getSheetByName(B2C_SOURCE_SHEET_NAME);
 
   if (!sheet) {

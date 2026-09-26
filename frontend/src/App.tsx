@@ -15,6 +15,7 @@ import {
   PackageCheck,
   RefreshCw,
   Scale,
+  Settings2,
   ShieldCheck,
   Sun,
   Target,
@@ -31,9 +32,11 @@ import {
   getConfig,
   getCycleCoverage,
   getDashboard,
+  getSourceSettings,
   getSkuMaster,
   getTransactions,
-  refreshDashboard
+  refreshDashboard,
+  updateSourceSettings
 } from './api';
 import { FilterBar } from './components/FilterBar';
 import {
@@ -41,6 +44,7 @@ import {
   CycleCoveragePage
 } from './components/CycleCoveragePage';
 import { CalculationLogicPage } from './components/CalculationLogicPage';
+import { SourceSettingsPage } from './components/SourceSettingsPage';
 import { InventoryTable } from './components/InventoryTable';
 import { KpiCard } from './components/KpiCard';
 import {
@@ -78,7 +82,8 @@ type DashboardPage =
   | 'kpi'
   | 'transactions'
   | 'facilityProgress'
-  | 'calculationLogic';
+  | 'calculationLogic'
+  | 'settings';
 
 /** Builds a yesterday, month-to-date, or quarter-to-date CSV range. */
 function csvPeriodRange(period: TransactionCsvPeriod, referenceDate: string) {
@@ -114,6 +119,7 @@ interface DashboardUser {
   email: string;
   picture: string;
   expiresAt: number;
+  idToken: string;
 }
 
 interface GoogleCredentialResponse {
@@ -208,7 +214,8 @@ function decodeGoogleCredential(credential: string): DashboardUser {
     name: String(claims.name || email.split('@')[0]),
     email,
     picture: String(claims.picture || ''),
-    expiresAt
+    expiresAt,
+    idToken: credential
   };
 }
 
@@ -698,6 +705,12 @@ function SectionNavigation({
       label: 'Calculation Logic',
       description: 'Formulas and publication flow',
       icon: BookOpenCheck
+    },
+    {
+      page: 'settings' as const,
+      label: 'Settings',
+      description: 'Source workbook schedule',
+      icon: Settings2
     }
   ];
 
@@ -1417,6 +1430,9 @@ export default function App() {
   const [exportingCsvPeriod, setExportingCsvPeriod] =
     useState<TransactionCsvPeriod | null>(null);
   const [isManualRefreshing, setIsManualRefreshing] = useState(false);
+  const [isSavingSource, setIsSavingSource] = useState(false);
+  const [sourceSaveError, setSourceSaveError] = useState('');
+  const [sourceSaveMessage, setSourceSaveMessage] = useState('');
   const [selectedAbcPeriod, setSelectedAbcPeriod] =
     useState<PeriodKey | null>(null);
   const debouncedTableSearch = useDebouncedValue(tableSearch, 400);
@@ -1429,6 +1445,14 @@ export default function App() {
     staleTime: 5 * 60 * 1000,
     retry: 2,
     retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 5000)
+  });
+
+  const sourceSettingsQuery = useQuery({
+    queryKey: ['sourceSettings'],
+    queryFn: getSourceSettings,
+    enabled: Boolean(signedInUser) && activePage === 'settings',
+    staleTime: 60 * 1000,
+    retry: 1
   });
 
   const refreshInterval =
@@ -1632,6 +1656,7 @@ export default function App() {
     (activePage === 'transactions' && transactionsQuery.isFetching) ||
     ((activePage === 'kpi' || activePage === 'facilityProgress') &&
       cycleCoverageQuery.isFetching) ||
+    (activePage === 'settings' && sourceSettingsQuery.isFetching) ||
     (SHOW_MASTERS &&
       (binMasterQuery.isFetching || skuMasterQuery.isFetching));
 
@@ -1657,6 +1682,10 @@ export default function App() {
       requests.push(cycleCoverageQuery.refetch());
     }
 
+    if (activePage === 'settings') {
+      requests.push(sourceSettingsQuery.refetch());
+    }
+
     if (SHOW_MASTERS) {
       requests.push(
         binMasterQuery.refetch(),
@@ -1666,6 +1695,50 @@ export default function App() {
 
     await Promise.allSettled(requests);
     setIsManualRefreshing(false);
+  }
+
+  async function saveSourceSettings(
+    spreadsheetReference: string,
+    effectiveFrom: string
+  ) {
+    setSourceSaveError('');
+    setSourceSaveMessage('');
+
+    if (!signedInUser?.idToken) {
+      setSourceSaveError(
+        'Please sign out and sign in again before changing the source workbook.'
+      );
+      return;
+    }
+
+    setIsSavingSource(true);
+    try {
+      const response = await updateSourceSettings({
+        spreadsheetReference,
+        effectiveFrom,
+        idToken: signedInUser.idToken
+      });
+      queryClient.setQueryData(['sourceSettings'], response);
+      setSourceSaveMessage(
+        response.data.message || 'Source workbook saved successfully.'
+      );
+
+      if (effectiveFrom <= response.data.today) {
+        await refreshDashboard();
+        await Promise.allSettled([
+          dashboardQuery.refetch(),
+          cycleCoverageQuery.refetch()
+        ]);
+      }
+    } catch (saveError) {
+      setSourceSaveError(
+        saveError instanceof Error
+          ? saveError.message
+          : 'The source workbook could not be saved.'
+      );
+    } finally {
+      setIsSavingSource(false);
+    }
   }
 
   function logout() {
@@ -1777,6 +1850,12 @@ export default function App() {
       : cycleCoverageQuery.error
         ? 'The facility progress request failed.'
         : '';
+  const sourceSettingsErrorMessage = sourceSaveError ||
+    (sourceSettingsQuery.error instanceof Error
+      ? sourceSettingsQuery.error.message
+      : sourceSettingsQuery.error
+        ? 'The source settings request failed.'
+        : '');
 
   let emptyTitle = 'No inventory data found';
   let emptyMessage =
@@ -2092,6 +2171,23 @@ export default function App() {
 
             {activePage === 'calculationLogic' ? (
               <CalculationLogicPage config={config} />
+            ) : null}
+
+            {activePage === 'settings' ? (
+              <SourceSettingsPage
+                data={sourceSettingsQuery.data?.data}
+                isLoading={sourceSettingsQuery.isLoading}
+                isSaving={isSavingSource}
+                errorMessage={sourceSettingsErrorMessage}
+                saveMessage={sourceSaveMessage}
+                onRetry={() => {
+                  setSourceSaveError('');
+                  void sourceSettingsQuery.refetch();
+                }}
+                onSave={(spreadsheetReference, effectiveFrom) => {
+                  void saveSourceSettings(spreadsheetReference, effectiveFrom);
+                }}
+              />
             ) : null}
 
             {SHOW_MASTERS ? (

@@ -13,6 +13,10 @@ interface KpiCardProps {
   value: string;
   secondaryValue?: string;
   secondaryLabel?: string;
+  supportingMetric?: {
+    label: string;
+    value: string;
+  };
   description: string;
   icon: LucideIcon;
   tone?: CardTone;
@@ -41,6 +45,7 @@ export function KpiCard({
   value,
   secondaryValue,
   secondaryLabel,
+  supportingMetric,
   description,
   icon: Icon,
   tone = 'blue',
@@ -60,6 +65,14 @@ export function KpiCard({
             <p className="mt-1 text-xs font-semibold text-slate-600 dark:text-slate-300">
               {secondaryLabel ? `${secondaryLabel}: ` : ''}
               {secondaryValue}
+            </p>
+          ) : null}
+          {supportingMetric ? (
+            <p className="mt-1.5 flex flex-wrap items-baseline gap-x-1.5 text-xs text-slate-600 dark:text-slate-300">
+              <span>{supportingMetric.label}:</span>
+              <span className="font-bold text-slate-950 dark:text-white">
+                {supportingMetric.value}
+              </span>
             </p>
           ) : null}
         </div>

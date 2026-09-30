@@ -1320,6 +1320,13 @@ function KpiGrid({
   const completionStyle = getAccuracyStyle(
     kpis.cycleCountCompletion
   );
+  const netVarianceAccuracy =
+    kpis.systemQuantity === 0
+      ? 0
+      : 100 -
+        (Math.abs(kpis.netDifference) /
+          Math.abs(kpis.systemQuantity)) *
+          100;
 
   return (
     <div className="space-y-3">
@@ -1396,7 +1403,11 @@ function KpiGrid({
         value={formatNumber(kpis.netDifference)}
         secondaryLabel="Value"
         secondaryValue={formatCurrency(kpis.netDifferenceValue)}
-        description="Physical quantity minus system quantity."
+        supportingMetric={{
+          label: 'Net Variance Accuracy',
+          value: formatPercent(netVarianceAccuracy)
+        }}
+        description="100 − (|Net Difference| ÷ System Qty × 100)."
         icon={Scale}
         tone={kpis.netDifference < 0 ? 'red' : 'blue'}
       />

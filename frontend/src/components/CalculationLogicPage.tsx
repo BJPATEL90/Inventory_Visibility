@@ -150,6 +150,12 @@ export function CalculationLogicPage({
         'Calculated from the final period totals. Negative results are displayed in brackets.'
     },
     {
+      name: 'Net Variance Accuracy',
+      formula: '100 − (|Net Difference| ÷ System Quantity × 100)',
+      explanation:
+        'Displayed on the Net Diff card as a separate net-based measure. If total System Quantity is zero, the result is safely returned as 0%.'
+    },
+    {
       name: 'Short Quantity',
       formula: 'Σ |Difference| where Difference < 0',
       explanation:

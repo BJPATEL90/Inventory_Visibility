@@ -996,7 +996,13 @@ Physical Quantity = Sum of Phy
 
 ```text
 Net Difference = Physical Quantity - System Quantity
+
+Net Variance Accuracy %
+= 100 - (ABS(Net Difference) / Total System Quantity x 100)
 ```
+
+The Net Diff KPI card displays Net Variance Accuracy as a separate net-based
+measure. If System Quantity is zero, the result is 0%.
 
 Net Difference deliberately uses `Phy - Sys` totals. Short and Excess use the
 source `Diff` values. Therefore, if a source row's `Diff` does not equal

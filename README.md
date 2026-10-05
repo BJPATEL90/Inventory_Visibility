@@ -106,7 +106,8 @@ or spreadsheet ID and an **Effective from** date. Before saving, Apps Script:
 
 - verifies the signed-in Google ID token belongs to `mosaicwellness.in`;
 - confirms the workbook is accessible to the Apps Script owner;
-- confirms the `B2C`, `OWN`, and `SL_Export` tabs and required headers exist;
+- confirms `B2C`, `OWN`, `SL_Export`, `SL_AMBIENT`, `SL_MH`, and `SL_RX`
+  tabs (including supported operational aliases) and required headers exist;
 - stores the dated source in the hidden `Source_Registry` sheet; and
 - clears the dashboard summary cache so an active change is rebuilt.
 

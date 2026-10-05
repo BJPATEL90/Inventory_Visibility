@@ -25,6 +25,17 @@ const B2C_SOURCE_SPREADSHEET_ID =
 const B2C_SOURCE_SHEET_NAME = 'B2C';
 const OWN_SOURCE_SHEET_NAME = 'OWN';
 const SL_EXPORT_SOURCE_SHEET_NAME = 'SL_Export';
+const FULL_EXTERNAL_SOURCE_START_DATE = '2026-10-01';
+const EXTERNAL_FACILITY_SHEET_ALIASES = {
+  SL_AMBIENT: [
+    'SL_AMBIENT',
+    'SL AMBIENT',
+    'SL AMBIENT ALL DATA',
+    'SL AMBIEANT ALL DATA'
+  ],
+  SL_MH: ['SL_MH', 'SL MH', 'SL_MH Facility All Data'],
+  SL_RX: ['SL_RX', 'SL RX']
+};
 const SOURCE_REGISTRY_SHEET_NAME = 'Source_Registry';
 const SOURCE_REGISTRY_HEADERS = [
   'Effective From',
@@ -265,7 +276,7 @@ function doGet(e) {
  * One-time application setup.
  *
  * This function creates or completes only Config and Activity_Status.
- * It does not edit SL_AMBIENT, SL_MH, SL_RX, OWN, or B2C.
+ * It does not edit any inventory source tab.
  */
 function setupApplication() {
   const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
@@ -435,6 +446,9 @@ function getSourceSettings() {
     today: today,
     suggestedEffectiveFrom: nextQuarterStartIso_(today),
     sourceSheets: [
+      'SL_AMBIENT (or SL AMBIEANT ALL DATA)',
+      'SL_MH (or SL_MH Facility All Data)',
+      'SL_RX (or SL RX)',
       B2C_SOURCE_SHEET_NAME,
       OWN_SOURCE_SHEET_NAME,
       SL_EXPORT_SOURCE_SHEET_NAME
@@ -443,7 +457,8 @@ function getSourceSettings() {
     schedule: schedule,
     note:
       'A dated source change preserves rows from earlier workbooks. ' +
-      'B2C, OWN, and SL_Export are read from the workbook active for each date.'
+      'From 2026-10-01, all six facility sources are read from the workbook ' +
+      'active for each date.'
   };
 }
 
@@ -684,6 +699,33 @@ function validateCycleCountSourceWorkbook_(spreadsheet) {
     }
   });
 
+  Object.keys(EXTERNAL_FACILITY_SHEET_ALIASES).forEach(function (facility) {
+    const sheet = findSheetByAliases_(
+      spreadsheet,
+      EXTERNAL_FACILITY_SHEET_ALIASES[facility]
+    );
+    if (!sheet) {
+      errors.push(
+        'Missing ' + facility + ' tab. Accepted names: ' +
+        EXTERNAL_FACILITY_SHEET_ALIASES[facility].join(', ') + '.'
+      );
+      return;
+    }
+    foundSheets.push(sheet.getName());
+    if (sheet.getLastColumn() === 0) {
+      errors.push('Tab "' + sheet.getName() + '" has no header row.');
+      return;
+    }
+    const headers = sheet
+      .getRange(1, 1, 1, sheet.getLastColumn())
+      .getDisplayValues()[0];
+    try {
+      inventoryHeaderIndexes_(headers, sheet.getName());
+    } catch (error) {
+      errors.push(error && error.message ? error.message : String(error));
+    }
+  });
+
   return {
     valid: errors.length === 0,
     foundSheets: foundSheets,
@@ -825,21 +867,45 @@ function getCombinedData(
   const abcClassMap = optionalAbcClassMap || {};
   const timeZone = getTimeZone_();
   const skippedB2cFacilityRows = [];
+  const sourceSchedule = getCycleCountSourceSchedule_();
+  sourceSchedule.forEach(function (source) {
+    source.externalFacilitySheets = {};
+    if (source.effectiveFrom < FULL_EXTERNAL_SOURCE_START_DATE) {
+      return;
+    }
+    Object.keys(EXTERNAL_FACILITY_SHEET_ALIASES).forEach(function (facility) {
+      const sheet = findSheetByAliases_(
+        source.spreadsheet,
+        EXTERNAL_FACILITY_SHEET_ALIASES[facility]
+      );
+      if (sheet) {
+        source.externalFacilitySheets[facility] = sheet;
+      }
+    });
+  });
   ['SL_AMBIENT', 'SL_MH', 'SL_RX'].forEach(function (sheetName) {
+    const internalRows = readStandardSourceRows_(
+      spreadsheet,
+      sheetName,
+      costMap,
+      abcClassMap,
+      timeZone,
+      '',
+      sheetName
+    ).filter(function (row) {
+      return !rowBelongsToExternalFacilityWindow_(
+        row,
+        sheetName,
+        sourceSchedule
+      );
+    });
     Array.prototype.push.apply(
       combinedRows,
-      readStandardSourceRows_(
-        spreadsheet,
-        sheetName,
-        costMap,
-        abcClassMap,
-        timeZone,
-        ''
-      )
+      internalRows
     );
   });
 
-  getCycleCountSourceSchedule_().forEach(function (source) {
+  sourceSchedule.forEach(function (source) {
     const sourcePrefix = source.spreadsheetId.slice(0, 10) + '-';
     const b2cResult = readB2cCombinedRows_(
       costMap,
@@ -865,6 +931,26 @@ function getCombinedData(
         );
       }
     );
+
+    if (source.effectiveFrom >= FULL_EXTERNAL_SOURCE_START_DATE) {
+      Object.keys(source.externalFacilitySheets || {}).forEach(
+        function (facility) {
+          const facilitySheet = source.externalFacilitySheets[facility];
+          Array.prototype.push.apply(
+            sourceRows,
+            readStandardSourceRows_(
+              source.spreadsheet,
+              facilitySheet.getName(),
+              costMap,
+              abcClassMap,
+              timeZone,
+              sourcePrefix,
+              facility
+            )
+          );
+        }
+      );
+    }
 
     Array.prototype.push.apply(
       combinedRows,
@@ -895,7 +981,8 @@ function readStandardSourceRows_(
   costMap,
   abcClassMap,
   timeZone,
-  idPrefix
+  idPrefix,
+  optionalFacilityName
 ) {
   const sheet = spreadsheet.getSheetByName(sheetName);
   const rows = [];
@@ -914,7 +1001,7 @@ function readStandardSourceRows_(
       continue;
     }
 
-    const facility = sourceFacilityName_(
+    const facility = optionalFacilityName || sourceFacilityName_(
       sheetName,
       indexes.Facility === undefined ? '' : row[indexes.Facility]
     );
@@ -974,6 +1061,41 @@ function readStandardSourceRows_(
     }));
   }
   return rows;
+}
+
+/** Finds a source tab using normalized, case-insensitive aliases. */
+function findSheetByAliases_(spreadsheet, aliases) {
+  const wanted = {};
+  aliases.forEach(function (alias) {
+    wanted[normalizeHeader_(alias)] = true;
+  });
+  const sheets = spreadsheet.getSheets();
+  for (let index = 0; index < sheets.length; index += 1) {
+    if (wanted[normalizeHeader_(sheets[index].getName())]) {
+      return sheets[index];
+    }
+  }
+  return null;
+}
+
+/**
+ * From October 2026, an external full-facility workbook replaces the three
+ * legacy tabs in Inventory_Dashboard for its own date window.
+ */
+function rowBelongsToExternalFacilityWindow_(row, facility, schedule) {
+  return schedule.some(function (source) {
+    if (source.effectiveFrom < FULL_EXTERNAL_SOURCE_START_DATE) {
+      return false;
+    }
+    const ownsDate = row.date
+      ? row.date >= source.effectiveFrom &&
+        (!source.effectiveUntil || row.date <= source.effectiveUntil)
+      : source.isLatest;
+    return ownsDate && Boolean(
+      source.externalFacilitySheets &&
+      source.externalFacilitySheets[facility]
+    );
+  });
 }
 
 /** Keeps each workbook responsible only for dates in its registry window. */

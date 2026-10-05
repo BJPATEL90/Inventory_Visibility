@@ -92,9 +92,9 @@ export function SourceSettingsPage({
           Cycle-count source
         </h2>
         <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600 dark:text-slate-300">
-          Schedule the Google Sheet used for B2C, OWN, and SL_Export. Earlier
-          sources remain attached to their original dates, so changing the
-          source does not remove prior-quarter transactions.
+          Schedule the Google Sheet used for all cycle-count facility tabs.
+          Earlier sources remain attached to their original dates, so changing
+          the source does not remove prior-quarter transactions.
         </p>
       </div>
 

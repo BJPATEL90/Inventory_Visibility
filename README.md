@@ -115,8 +115,23 @@ Rows are selected by transaction date. The preceding source remains valid up
 to the day before the next source starts. Undated external rows are read only
 from the latest scheduled source to prevent duplication.
 
+Before scheduling the next calendar-quarter source, Settings checks the
+hidden `Quarter_Archive_System` ledger. The preceding closed quarter must have
+status `ARCHIVED`. Use **Prepare Final Quarter Summary** to generate an Excel
+workbook containing Facility Summary, Daily Productivity, ABC Analysis, top-5
+SKU tables, Report Control, and one detailed tab per supported facility. The
+generated workbook is saved to Google Drive and the archive ledger records its
+file ID, reporting dates, row count, generator, and generation time. If the
+quarter is already archived, Settings shows the preserved workbook and a
+download link instead of generating a duplicate.
+
+The approved Q2 FY 2026-27 archive is preserved here:
+[Inventory Cycle Count Q2 Final](https://docs.google.com/spreadsheets/d/1JX3tHM9uLfxILVIwr0nYYzurrR57u8Yd/edit).
+
 To inspect the history in Google Sheets, open **View > Hidden sheets >
 Source_Registry**. Do not edit it manually; use the frontend Settings page.
+Quarter archives are recorded separately in the hidden
+`Quarter_Archive_System` sheet and should also not be edited manually.
 
 This is separate from the daily inventory CSV. The CSV contains the facility
 names `SL MM`, `SLLJ`, and `SL BW`; it is not expected to contain a facility

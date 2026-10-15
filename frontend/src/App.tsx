@@ -35,6 +35,7 @@ import {
   getSourceSettings,
   getSkuMaster,
   getTransactions,
+  prepareFinalQuarterSummary,
   refreshDashboard,
   updateSourceSettings
 } from './api';
@@ -1444,6 +1445,9 @@ export default function App() {
   const [isSavingSource, setIsSavingSource] = useState(false);
   const [sourceSaveError, setSourceSaveError] = useState('');
   const [sourceSaveMessage, setSourceSaveMessage] = useState('');
+  const [isPreparingArchive, setIsPreparingArchive] = useState(false);
+  const [quarterArchiveError, setQuarterArchiveError] = useState('');
+  const [quarterArchiveMessage, setQuarterArchiveMessage] = useState('');
   const [selectedAbcPeriod, setSelectedAbcPeriod] =
     useState<PeriodKey | null>(null);
   const debouncedTableSearch = useDebouncedValue(tableSearch, 400);
@@ -1749,6 +1753,40 @@ export default function App() {
       );
     } finally {
       setIsSavingSource(false);
+    }
+  }
+
+  async function prepareQuarterArchive() {
+    setQuarterArchiveError('');
+    setQuarterArchiveMessage('');
+
+    if (!signedInUser?.idToken) {
+      setQuarterArchiveError(
+        'Please sign out and sign in again before preparing the quarter report.'
+      );
+      return;
+    }
+
+    setIsPreparingArchive(true);
+    try {
+      const response = await prepareFinalQuarterSummary(signedInUser.idToken);
+      queryClient.setQueryData(['sourceSettings'], response);
+      const archive = response.data.quarterArchive;
+      setQuarterArchiveMessage(
+        response.data.message || `${archive.quarterLabel} was archived successfully.`
+      );
+
+      if (archive.downloadUrl) {
+        window.open(archive.downloadUrl, '_blank', 'noopener,noreferrer');
+      }
+    } catch (archiveError) {
+      setQuarterArchiveError(
+        archiveError instanceof Error
+          ? archiveError.message
+          : 'The final quarter report could not be prepared.'
+      );
+    } finally {
+      setIsPreparingArchive(false);
     }
   }
 
@@ -2189,14 +2227,20 @@ export default function App() {
                 data={sourceSettingsQuery.data?.data}
                 isLoading={sourceSettingsQuery.isLoading}
                 isSaving={isSavingSource}
+                isPreparingArchive={isPreparingArchive}
                 errorMessage={sourceSettingsErrorMessage}
                 saveMessage={sourceSaveMessage}
+                archiveError={quarterArchiveError}
+                archiveMessage={quarterArchiveMessage}
                 onRetry={() => {
                   setSourceSaveError('');
                   void sourceSettingsQuery.refetch();
                 }}
                 onSave={(spreadsheetReference, effectiveFrom) => {
                   void saveSourceSettings(spreadsheetReference, effectiveFrom);
+                }}
+                onPrepareArchive={() => {
+                  void prepareQuarterArchive();
                 }}
               />
             ) : null}

@@ -3,9 +3,11 @@ import {
   AlertCircle,
   CalendarDays,
   CheckCircle2,
+  Download,
   ExternalLink,
   FileSpreadsheet,
   History,
+  Loader2,
   Save
 } from 'lucide-react';
 import type { SourceSettingsData } from '../types';
@@ -14,10 +16,14 @@ interface SourceSettingsPageProps {
   data?: SourceSettingsData;
   isLoading: boolean;
   isSaving: boolean;
+  isPreparingArchive: boolean;
   errorMessage: string;
   saveMessage: string;
+  archiveError: string;
+  archiveMessage: string;
   onRetry: () => void;
   onSave: (spreadsheetReference: string, effectiveFrom: string) => void;
+  onPrepareArchive: () => void;
 }
 
 function formatDate(value: string) {
@@ -35,10 +41,14 @@ export function SourceSettingsPage({
   data,
   isLoading,
   isSaving,
+  isPreparingArchive,
   errorMessage,
   saveMessage,
+  archiveError,
+  archiveMessage,
   onRetry,
-  onSave
+  onSave,
+  onPrepareArchive
 }: SourceSettingsPageProps) {
   const [spreadsheetReference, setSpreadsheetReference] = useState('');
   const [effectiveFrom, setEffectiveFrom] = useState('');
@@ -81,6 +91,7 @@ export function SourceSettingsPage({
   }
 
   const activeSource = data?.activeSource;
+  const archive = data?.quarterArchive;
 
   return (
     <section>
@@ -133,6 +144,88 @@ export function SourceSettingsPage({
                 ) : null}
               </div>
             </div>
+          </article>
+
+          <article className="rounded-2xl border border-amber-200 bg-white p-5 shadow-sm dark:border-amber-900 dark:bg-slate-900">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="min-w-0">
+                <p className="text-xs font-bold uppercase tracking-[0.14em] text-amber-700 dark:text-amber-300">
+                  Final quarter archive
+                </p>
+                <h3 className="mt-1 text-lg font-bold">
+                  {archive?.quarterLabel || 'Previous closed quarter'}
+                </h3>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                  {archive
+                    ? `${formatDate(archive.startDate)} to ${formatDate(archive.endDate)}`
+                    : 'Quarter dates are being prepared.'}
+                </p>
+              </div>
+
+              <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center">
+                <div className="min-w-0 rounded-xl bg-slate-50 px-4 py-3 dark:bg-slate-950">
+                  <p className="truncate text-sm font-semibold">
+                    {archive?.fileName || 'Inventory_Cycle_Count_Final'}
+                  </p>
+                  <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                    Excel workbook (.xlsx)
+                    {archive?.transactionRows
+                      ? ` · ${archive.transactionRows.toLocaleString('en-IN')} rows`
+                      : ''}
+                  </p>
+                </div>
+
+                {archive?.status === 'ARCHIVED' && archive.downloadUrl ? (
+                  <a
+                    href={archive.downloadUrl}
+                    className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-3 text-sm font-bold text-white hover:bg-emerald-800"
+                  >
+                    <Download className="h-4 w-4" />
+                    Download final report
+                  </a>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={onPrepareArchive}
+                    disabled={isPreparingArchive || !archive}
+                    className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-amber-600 px-4 py-3 text-sm font-bold text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {isPreparingArchive ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Download className="h-4 w-4" />
+                    )}
+                    {isPreparingArchive
+                      ? 'Preparing report...'
+                      : 'Prepare Final Quarter Summary'}
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {archive?.status === 'ARCHIVED' ? (
+              <p className="mt-4 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
+                Archived {archive.generatedAt ? `on ${new Date(archive.generatedAt).toLocaleString('en-IN')}` : ''}
+                {archive.generatedBy ? ` by ${archive.generatedBy}` : ''}. A new-quarter source can now be scheduled safely.
+              </p>
+            ) : (
+              <p className="mt-4 text-xs leading-5 text-slate-600 dark:text-slate-300">
+                Generate and preserve this quarter before scheduling the next
+                source workbook. The report includes all approved summaries and
+                facility-level data tabs.
+              </p>
+            )}
+
+            {archiveError ? (
+              <p className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/30 dark:text-red-200">
+                {archiveError}
+              </p>
+            ) : null}
+            {archiveMessage ? (
+              <p className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200">
+                {archiveMessage}
+              </p>
+            ) : null}
           </article>
 
           <article className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">

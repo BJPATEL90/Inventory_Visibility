@@ -170,6 +170,37 @@ export interface DashboardConfig {
   inventoryExportName: string;
 }
 
+export interface PastPerformanceQuarter {
+  quarter: string;
+  label: string;
+  startDate: string;
+  endDate: string;
+  status: 'Closed' | 'QTD';
+  rowCount: number;
+  inventoryAccuracy: number;
+  valueAccuracy: number;
+  binAccuracy: number;
+  plannedBinCount: number;
+  actualBinCount: number;
+  cycleCountCompletion: number;
+  systemQuantity: number;
+  physicalQuantity: number;
+  netDifference: number;
+  absoluteVarianceQuantity: number;
+  systemValue: number;
+  physicalValue: number;
+  netDifferenceValue: number;
+  absoluteVarianceValue: number;
+  costCoverage: number;
+  capturedAt: string;
+}
+
+export interface PastPerformanceData {
+  sheetName: string;
+  generatedAt: string;
+  quarters: PastPerformanceQuarter[];
+}
+
 export interface SourceRegistryEntry {
   effectiveFrom: string;
   effectiveUntil: string;
@@ -180,14 +211,31 @@ export interface SourceRegistryEntry {
   updatedAt: string;
 }
 
+export interface QuarterArchiveStatus {
+  quarterKey: string;
+  quarterLabel: string;
+  startDate: string;
+  endDate: string;
+  status: 'ARCHIVED' | 'NOT_ARCHIVED';
+  fileId: string;
+  fileName: string;
+  fileUrl: string;
+  downloadUrl: string;
+  transactionRows: number;
+  generatedBy: string;
+  generatedAt: string;
+}
+
 export interface SourceSettingsData {
   today: string;
   suggestedEffectiveFrom: string;
   sourceSheets: string[];
   activeSource: SourceRegistryEntry | null;
   schedule: SourceRegistryEntry[];
+  quarterArchive: QuarterArchiveStatus;
   note: string;
   saved?: boolean;
+  archivePrepared?: boolean;
   message?: string;
   savedSource?: {
     effectiveFrom: string;

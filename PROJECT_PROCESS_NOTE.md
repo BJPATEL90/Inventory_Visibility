@@ -105,6 +105,12 @@ searchable inventory transactions, CSV download, scheduled HTML email, and a
 quarter-to-date CSV email attachment. Dashboard Charts and frontend master
 tables are currently disabled.
 
+At quarter close, open **Settings** and use **Prepare Final Quarter Summary**
+before scheduling the next quarter's source workbook. The control produces and
+preserves the approved Excel report in Drive, records it in the hidden
+`Quarter_Archive_System` sheet, and enables the next-quarter source cutover.
+An existing archived quarter is reused rather than regenerated.
+
 ## 7. Exceptions and Checks
 
 | Issue | Required action |

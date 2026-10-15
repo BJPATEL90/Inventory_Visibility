@@ -6,6 +6,7 @@ import type {
   DashboardConfig,
   DashboardData,
   DashboardRefreshResult,
+  PastPerformanceData,
   SourceSettingsData,
   SkuMasterRow,
   TransactionPageData,
@@ -180,6 +181,10 @@ export function refreshDashboard() {
   return request<DashboardRefreshResult>('refreshDashboard');
 }
 
+export function getPastPerformance() {
+  return request<PastPerformanceData>('pastPerformance');
+}
+
 function transactionParameters(query: TransactionQuery) {
   return {
     startDate: query.startDate,
@@ -272,6 +277,12 @@ export function updateSourceSettings(input: UpdateSourceSettingsInput) {
     spreadsheetReference: input.spreadsheetReference,
     effectiveFrom: input.effectiveFrom,
     idToken: input.idToken
+  });
+}
+
+export function prepareFinalQuarterSummary(idToken: string) {
+  return postRequest<SourceSettingsData>('prepareFinalQuarterSummary', {
+    idToken
   });
 }
 

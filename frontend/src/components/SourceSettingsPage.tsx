@@ -175,15 +175,7 @@ export function SourceSettingsPage({
                   </p>
                 </div>
 
-                {archive?.status === 'ARCHIVED' && archive.downloadUrl ? (
-                  <a
-                    href={archive.downloadUrl}
-                    className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-3 text-sm font-bold text-white hover:bg-emerald-800"
-                  >
-                    <Download className="h-4 w-4" />
-                    Download final report
-                  </a>
-                ) : (
+                <div className="flex shrink-0 flex-col gap-2">
                   <button
                     type="button"
                     onClick={onPrepareArchive}
@@ -199,7 +191,16 @@ export function SourceSettingsPage({
                       ? 'Preparing report...'
                       : 'Prepare Final Quarter Summary'}
                   </button>
-                )}
+                  {archive?.status === 'ARCHIVED' && archive.downloadUrl ? (
+                    <a
+                      href={archive.downloadUrl}
+                      className="inline-flex items-center justify-center gap-1.5 text-xs font-bold text-emerald-700 hover:underline dark:text-emerald-300"
+                    >
+                      <Download className="h-3.5 w-3.5" />
+                      Download archived report
+                    </a>
+                  ) : null}
+                </div>
               </div>
             </div>
 
